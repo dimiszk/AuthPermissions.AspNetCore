@@ -14,17 +14,21 @@ using AuthPermissions.AspNetCore.OpenIdCode;
 using AuthPermissions.AspNetCore.PolicyCode;
 using AuthPermissions.AspNetCore.Services;
 using AuthPermissions.AspNetCore.StartupServices;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.PermissionsCode;
+using AuthPermissions.BaseCode.PermissionsCode.Services;
+using AuthPermissions.BaseCode.SetupCode;
 using AuthPermissions.BulkLoadServices;
 using AuthPermissions.BulkLoadServices.Concrete;
-using AuthPermissions.CommonCode;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.PermissionsCode;
-using AuthPermissions.PermissionsCode.Services;
 using AuthPermissions.SetupCode;
 using AuthPermissions.SetupCode.Factories;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using RunMethodsSequentially;
 
 namespace AuthPermissions.AspNetCore
@@ -119,6 +123,28 @@ namespace AuthPermissions.AspNetCore
         }
 
         /// <summary>
+        /// This allows you to replace the default <see cref="ShardingConnections"/> code with you own code.
+        /// This allows you to add you own approach to managing sharding databases
+        /// NOTE: The <see cref="IOptionsSnapshot{TOptions}"/> of the connection strings and the shardingsettings.json file are still registered
+        /// </summary>
+        /// <typeparam name="TYourShardingCode">Your class that implements the <see cref="IShardingConnections"/> interface.</typeparam>
+        /// <param name="setupData"></param>
+        /// <returns></returns>
+        /// <exception cref="AuthPermissionsException"></exception>
+        public static AuthSetupData ReplaceShardingConnections<TYourShardingCode>(this AuthSetupData setupData)
+            where TYourShardingCode : class, IShardingConnections
+        {
+            if (!setupData.Options.TenantType.IsSharding())
+                throw new AuthPermissionsException(
+                    $"The sharding feature isn't turned on so you can't override the {nameof(ShardingConnections)} service.");
+
+            setupData.Services.AddScoped<IShardingConnections, TYourShardingCode>();
+            setupData.Options.InternalData.OverrideShardingConnections = true;
+
+            return setupData;
+        }
+
+        /// <summary>
         /// This will finalize the setting up of the AuthPermissions parts needed by ASP.NET Core
         /// NOTE: It assumes the AuthPermissions database has been created and has the current migration applied
         /// </summary>
@@ -184,6 +210,7 @@ namespace AuthPermissions.AspNetCore
             return serviceProvider;
         }
 
+
         //------------------------------------------------
         // private methods
 
@@ -199,7 +226,7 @@ namespace AuthPermissions.AspNetCore
             setupData.Services.AddScoped<IClaimsCalculator, ClaimsCalculator>();
             setupData.Services.AddTransient<IUsersPermissionsService, UsersPermissionsService>();
             setupData.Services.AddTransient<IEncryptDecryptService, EncryptDecryptService>();
-            if (setupData.Options.TenantType != TenantTypes.NotUsingTenants)
+            if (setupData.Options.TenantType.IsMultiTenant())
                 SetupMultiTenantServices(setupData);
 
             //The factories for the optional services
@@ -231,38 +258,69 @@ namespace AuthPermissions.AspNetCore
         {
             //This sets up the code to get the DataKey to the application's DbContext
 
+            //Check the TenantType and LinkToTenantType for incorrect versions
+            if (!setupData.Options.TenantType.IsHierarchical()
+                && setupData.Options.LinkToTenantType == LinkToTenantTypes.AppAndHierarchicalUsers)
+                throw new AuthPermissionsException(
+                    $"You can't set the {nameof(AuthPermissionsOptions.LinkToTenantType)} to " +
+                    $"{nameof(LinkToTenantTypes.AppAndHierarchicalUsers)} unless you are using AuthP's hierarchical multi-tenant setup.");
 
+            //The "Access the data of other tenant" feature is turned on so register the services
 
-            if (setupData.Options.LinkToTenantType == LinkToTenantTypes.NotTurnedOn)
-                //This uses the efficient GetDataKey from user
-                setupData.Services.AddScoped<IGetDataKeyFromUser, GetDataKeyFromUserNormal>();
-            else
+            //And register the service that manages the cookie and the service to start/stop linking
+            setupData.Services.AddScoped<IAccessTenantDataCookie, AccessTenantDataCookie>();
+            setupData.Services.AddScoped<ILinkToTenantDataService, LinkToTenantDataService>();
+            if (setupData.Options.TenantType.IsSharding())
             {
-                //Check the TenantType and LinkToTenantType for incorrect versions
-                if (setupData.Options.TenantType != TenantTypes.SingleLevel
-                    && setupData.Options.LinkToTenantType == LinkToTenantTypes.AppAndHierarchicalUsers)
+                if (setupData.Options.Configuration == null)
                     throw new AuthPermissionsException(
-                        $"You can't set the {nameof(AuthPermissionsOptions.LinkToTenantType)} to " +
-                        $"{nameof(LinkToTenantTypes.AppAndHierarchicalUsers)} unless you are using AuthP's hierarchical multi-tenant setup.");
-                
-                //The "Access the data of other tenant" feature is turned on so register the services
+                        $"You must set the {nameof(AuthPermissionsOptions.Configuration)} to the ASP.NET Core Configuration when using Sharding");
 
-                //And register the service that manages the cookie and the service to start/stop linking
-                setupData.Services.AddScoped<IAccessTenantDataCookie, AccessTenantDataCookie>();
+                //This gets access to the ConnectionStrings
+                setupData.Services.Configure<ConnectionStringsOption>(setupData.Options.Configuration.GetSection("ConnectionStrings"));
+                //This gets access to the ShardingData in the separate shardingsettings.json file
+                setupData.Services.Configure<ShardingSettingsOption>(setupData.Options.Configuration);
+                //This adds the shardingsettings.json to the configuration
+                setupData.Options.Configuration.AddJsonFile("shardingsettings.json", optional: true, reloadOnChange: true);
+
+                if (!setupData.Options.InternalData.OverrideShardingConnections)
+                    //Don't add the default service if the developer has added their own service
+                    setupData.Services.AddScoped<IShardingConnections, ShardingConnections>();
                 setupData.Services.AddScoped<ILinkToTenantDataService, LinkToTenantDataService>();
+
                 switch (setupData.Options.LinkToTenantType)
                 {
+                    case LinkToTenantTypes.OnlyAppUsers:
+                        setupData.Services
+                            .AddScoped<IGetShardingDataFromUser, GetShardingDataUserAccessTenantData>();
+                        break;
+                    case LinkToTenantTypes.AppAndHierarchicalUsers:
+                        setupData.Services
+                            .AddScoped<IGetShardingDataFromUser,
+                                GetShardingDataAppAndHierarchicalUsersAccessTenantData>();
+                        break;
+                    default:
+                        setupData.Services.AddScoped<IGetShardingDataFromUser, GetShardingDataUserNormal>();
+                        break;
+                }
+            }
+            else
+            {
+                setupData.Services.AddScoped<IGetDataKeyFromUser, GetDataKeyFromUserNormal>();
 
+                switch (setupData.Options.LinkToTenantType)
+                {
                     case LinkToTenantTypes.OnlyAppUsers:
                         setupData.Services.AddScoped<IGetDataKeyFromUser, GetDataKeyFromAppUserAccessTenantData>();
                         break;
                     case LinkToTenantTypes.AppAndHierarchicalUsers:
-                        setupData.Services.AddScoped<IGetDataKeyFromUser, GetDataKeyFromAppAndHierarchicalUsersAccessTenantData>();
+                        setupData.Services
+                            .AddScoped<IGetDataKeyFromUser, GetDataKeyFromAppAndHierarchicalUsersAccessTenantData>();
                         break;
                     default:
-                        throw new ArgumentOutOfRangeException();
+                        setupData.Services.AddScoped<IGetDataKeyFromUser, GetDataKeyFromUserNormal>();
+                        break;
                 }
-
             }
         }
     }

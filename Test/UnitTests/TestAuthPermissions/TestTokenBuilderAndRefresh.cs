@@ -6,10 +6,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using AuthPermissions;
 using AuthPermissions.AspNetCore.JwtTokenCode;
 using AuthPermissions.AspNetCore.Services;
-using AuthPermissions.DataLayer.EfCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
 using Microsoft.Extensions.Logging;
 using Test.TestHelpers;
 using TestSupport.EfHelpers;
@@ -32,7 +32,7 @@ namespace Test.UnitTests.TestAuthPermissions
                     {ConfigureAuthPJwtToken = AuthPSetupHelpers.CreateTestJwtSetupData(expiresIn)};
                 AuthPJwtConfiguration = options.ConfigureAuthPJwtToken;
                 var claimsCalc = new StubClaimsCalculator("This:That");
-                var logger = new Logger<TokenBuilder>(new LoggerFactory(new[] { new MyLoggerProviderActionOut(Logs.Add) }));
+                var logger = new LoggerFactory(new[] { new MyLoggerProviderActionOut(Logs.Add) }).CreateLogger<TokenBuilder>();
                 TokenBuilder = new TokenBuilder(options, claimsCalc, context, logger);
             }
 
@@ -105,6 +105,34 @@ namespace Test.UnitTests.TestAuthPermissions
             allRefreshTokens.Count.ShouldEqual(2);
             allRefreshTokens.Single(x => x.TokenValue == tokensAndStatus.updatedTokens.RefreshToken).IsInvalid.ShouldBeFalse();
             allRefreshTokens.Single(x => x.TokenValue != tokensAndStatus.updatedTokens.RefreshToken).IsInvalid.ShouldBeTrue();
+        }
+
+        [Fact]
+        public async Task RefreshTokenUsingRefreshTokenAsyncTwiceOk()
+        {
+            //SETUP
+            var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
+            using var context = new AuthPermissionsDbContext(options);
+            context.Database.EnsureCreated();
+
+            var setup = new SetupTokenBuilder(context);
+            var tokenAndRefresh = await setup.TokenBuilder.GenerateTokenAndRefreshTokenAsync("User1");
+
+            context.ChangeTracker.Clear();
+
+            //ATTEMPT
+            var tokensAndStatus1 = await setup.TokenBuilder.RefreshTokenUsingRefreshTokenAsync(tokenAndRefresh);
+            var tokensAndStatus = await setup.TokenBuilder.RefreshTokenUsingRefreshTokenAsync(tokensAndStatus1.updatedTokens);
+
+            //VERIFY
+            context.ChangeTracker.Clear();
+            tokensAndStatus.HttpStatusCode.ShouldEqual(200);
+
+            var allRefreshTokens = context.RefreshTokens.ToList();
+            allRefreshTokens.Count.ShouldEqual(3);
+            allRefreshTokens.Single(x => x.TokenValue == tokensAndStatus.updatedTokens.RefreshToken).IsInvalid.ShouldBeFalse();
+            allRefreshTokens.Where(x => x.TokenValue != tokensAndStatus.updatedTokens.RefreshToken)
+                .All(x => x.IsInvalid).ShouldBeTrue();
         }
 
         [Fact]

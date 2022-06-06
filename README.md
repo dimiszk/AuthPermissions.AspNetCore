@@ -3,14 +3,15 @@
 The AuthPermissions.AspNetCore library (shortened to AuthP) provides extra authorization features to a ASP.NET Core application. Here are AuthP's three main features:
 
 - An improved Role authorization system where the features a Role can access can be changed by an admin user (i.e. no need to edit and redeploy your application when a Role changes).
-- Implements a JWT refresh token feature to improve the security of using JWT Token in your application.
 - Provides features to create a multi-tenant database system, either using one-level tenant or multi-level tenant (hierarchical).
+- Implements a JWT refresh token feature to improve the security of using JWT Token in your application.
 
-**WARNING** If updating to Version 2 of this library, then you MUST read the [Migrate from AuthPermissions.AspNetCore 1.* to 2.0](https://github.com/JonPSmith/AuthPermissions.AspNetCore/blob/main/UpdateToVersion2.md) 
+The AuthP is an open-source library under the MIT licence (and remain as a open-source library for ever) and the NuGet package can be [found here](https://www.nuget.org/packages/AuthPermissions.AspNetCore/). The documentation can be found in the [GitHub wiki](https://github.com/JonPSmith/AuthPermissions.AspNetCore/wiki) and see [ReleaseNotes](https://github.com/JonPSmith/AuthPermissions.AspNetCore/blob/main/ReleaseNotes.md) for details of changes. There is also a [roadmap discussion](https://github.com/JonPSmith/AuthPermissions.AspNetCore/discussions/2) containing the plans for this library.
 
-The AuthP is an open-source library under the MIT licence (and remain as a open-source library for ever) and the NuGet package can be [found here](https://www.nuget.org/packages/AuthPermissions.AspNetCore/). 
+The AuthP library is being built in versions (see [roadmap](https://github.com/JonPSmith/AuthPermissions.AspNetCore/discussions/2)). If you have already built your application using an older version, then you need to look at the following "how up update" documents
 
-The documentation can be found in the [GitHub wiki](https://github.com/JonPSmith/AuthPermissions.AspNetCore/wiki) and see [ReleaseNotes](https://github.com/JonPSmith/AuthPermissions.AspNetCore/blob/main/ReleaseNotes.md) for details of changes. There is also a [roadmap discussion](https://github.com/JonPSmith/AuthPermissions.AspNetCore/discussions/2) containing the plans for this library.
+- From Migrating from AuthPermissions.AspNetCore 1.* to 1.0 see [UpdateToVersion2.md](https://github.com/JonPSmith/AuthPermissions.AspNetCore/blob/main/UpdateToVersion2.md)
+- From Migrating from AuthPermissions.AspNetCore 2.* to 3.0 see [UpdateToVersion3.md](https://github.com/JonPSmith/AuthPermissions.AspNetCore/blob/main/UpdateToVersion3.md)
 
 The AuthP library also:
 

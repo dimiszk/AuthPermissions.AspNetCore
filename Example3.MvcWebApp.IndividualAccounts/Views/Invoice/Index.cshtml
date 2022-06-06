@@ -1,5 +1,6 @@
-﻿@using AuthPermissions.PermissionsCode
+﻿@using Example3.InvoiceCode.Services
 @using Example3.MvcWebApp.IndividualAccounts.PermissionsCode
+@using AuthPermissions.BaseCode.PermissionsCode
 @model List<Example3.InvoiceCode.Dtos.InvoiceSummaryDto>
 
 @{
@@ -12,9 +13,9 @@
     <h3 class="text-success">@ViewBag.Message</h3>
 }
 
-<h1>@ViewBag.CompanyName invoices</h1>
+<h1>@AddTenantNameClaim.GetTenantNameFromUser(User) invoices</h1>
 <p>
-    Welcome to the example multi-tenant application managing invoices for lots of companies.
+    <i>NOTE: This example multi-tenant application makes each company think the application was build just for them.</i>
 </p>
 
 <p>

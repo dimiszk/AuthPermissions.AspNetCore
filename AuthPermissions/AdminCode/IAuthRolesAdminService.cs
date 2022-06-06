@@ -4,9 +4,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.PermissionsCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.PermissionsCode;
 using StatusGeneric;
 
 namespace AuthPermissions.AdminCode
@@ -37,6 +37,13 @@ namespace AuthPermissions.AdminCode
         /// This returns a query containing all the Auth users that have the given role name
         /// </summary>
         IQueryable<AuthUser> QueryUsersUsingThisRole(string roleName);
+
+        /// <summary>
+        /// This returns a query containing all the Tenants that have given role name
+        /// </summary>
+        /// <param name="roleName"></param>
+        /// <returns></returns>
+        public IQueryable<Tenant> QueryTenantsUsingThisRole(string roleName);
 
         /// <summary>
         /// This creates a new RoleToPermissions with the given description and permissions defined by the names

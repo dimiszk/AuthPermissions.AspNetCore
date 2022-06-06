@@ -6,7 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using Example3.InvoiceCode.Dtos;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -131,7 +131,7 @@ public class UserRegisterInviteService : IUserRegisterInviteService
             tenantId = int.Parse(parts[0]);
             emailOfJoiner = parts[1].Trim();
         }
-        catch (Exception e)
+        catch (Exception)
         {
             //Could add a log here
             return status.AddError("Sorry, the verification failed.");
@@ -180,11 +180,8 @@ public class UserRegisterInviteService : IUserRegisterInviteService
                 result.Errors.Select(x => x.Description).ToList().ForEach(error => status.AddError(error));
             }
         }
-        else
-        {
-            if (!await _userManager.CheckPasswordAsync(user, password))
-                throw new AuthPermissionsException("The user was known, but the password was wrong");
-        }
+        else if(!await _userManager.CheckPasswordAsync(user, password))
+            status.AddError("The user was already known, but the password was wrong.");
 
         //Check if user is already in the AuthUsers (because a AuthUser can only be linked to one tenant)
         if ((await _authUsersAdmin.FindAuthUserByEmailAsync(email)).Result != null)

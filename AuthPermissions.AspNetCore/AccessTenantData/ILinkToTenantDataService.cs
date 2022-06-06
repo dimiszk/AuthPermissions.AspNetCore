@@ -3,7 +3,7 @@
 
 using System.Threading.Tasks;
 using AuthPermissions.AspNetCore.AccessTenantData.Services;
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using StatusGeneric;
 
 namespace AuthPermissions.AspNetCore.AccessTenantData;
@@ -35,6 +35,14 @@ public interface ILinkToTenantDataService
     /// </summary>
     /// <returns></returns>
     string GetDataKeyOfLinkedTenant();
+
+    /// <summary>
+    /// This gets the DataKey and ConnectionName from the <see cref="AccessTenantDataCookie"/>
+    /// If there no cookie it returns null for both properties
+    /// </summary>
+    /// <returns></returns>
+    /// <exception cref="AuthPermissionsException"></exception>
+    (string dataKey, string connectionName) GetShardingDataOfLinkedTenant();
 
     /// <summary>
     /// This gets the TenantFullName of the tenant that the <see cref="AccessTenantDataCookie"/> contains

@@ -3,7 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
 using AuthPermissions.AspNetCore;
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using Example3.InvoiceCode.Services;
 using Example3.MvcWebApp.IndividualAccounts.Models;
 using Example3.MvcWebApp.IndividualAccounts.PermissionsCode;
@@ -15,19 +15,15 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
     public class TenantAdminController : Controller
     {
         private readonly IAuthUsersAdminService _authUsersAdmin;
-        private readonly ICompanyNameService _companyService;
 
-        public TenantAdminController(IAuthUsersAdminService authUsersAdmin, ICompanyNameService companyService)
+        public TenantAdminController(IAuthUsersAdminService authUsersAdmin)
         {
             _authUsersAdmin = authUsersAdmin;
-            _companyService = companyService;
         }
 
         [HasPermission(Example3Permissions.UserRead)]
         public async Task<IActionResult> Index(string message)
         {
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
-
             var dataKey = User.GetAuthDataKeyFromUser();
             var userQuery = _authUsersAdmin.QueryAuthUsers(dataKey);
             var usersToShow = await AuthUserDisplay.TurnIntoDisplayFormat(userQuery.OrderBy(x => x.Email)).ToListAsync();
@@ -37,10 +33,9 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
             return View(usersToShow);
         }
 
+        [HasPermission(Example3Permissions.UserRolesChange)]
         public async Task<ActionResult> EditRoles(string userId)
         {
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
-
             var status = await SetupManualUserChange.PrepareForUpdateAsync(userId, _authUsersAdmin);
             if (status.HasErrors)
                 return RedirectToAction(nameof(ErrorDisplay),
@@ -51,10 +46,11 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
 
         [HttpPost]
         [ValidateAntiForgeryToken]
+        [HasPermission(Example3Permissions.UserRolesChange)]
         public async Task<ActionResult> EditRoles(SetupManualUserChange change)
         {
             var status = await _authUsersAdmin.UpdateUserAsync(change.UserId,
-                change.Email, change.UserName, change.RoleNames, change.TenantName);
+                roleNames: change.RoleNames);
 
             if (status.HasErrors)
                 return RedirectToAction(nameof(ErrorDisplay),
@@ -67,9 +63,6 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
         [HasPermission(Example3Permissions.InviteUsers)]
         public async Task<ActionResult> InviteUser()
         {
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
-
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
             var currentUser = (await _authUsersAdmin.FindAuthUserByUserIdAsync(User.GetUserIdFromUser()))
                 .Result;
 
@@ -81,7 +74,6 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
         [ValidateAntiForgeryToken]
         public async Task<ActionResult> InviteUser([FromServices] IUserRegisterInviteService userRegisterInvite, string email)
         {
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
             var currentUser = (await _authUsersAdmin.FindAuthUserByUserIdAsync(User.GetUserIdFromUser()))
                 .Result;
 
@@ -94,10 +86,8 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
             return View("InviteUserUrl", new InviteUserDto(email, currentUser.UserTenant.TenantFullName, inviteUrl));
         }
 
-        public async Task<ActionResult> ErrorDisplay(string errorMessage)
+        public ActionResult ErrorDisplay(string errorMessage)
         {
-            ViewBag.CompanyName = await _companyService.GetCurrentCompanyNameAsync();
-
             return View((object)errorMessage);
         }
 

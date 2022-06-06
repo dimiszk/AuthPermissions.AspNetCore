@@ -4,10 +4,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices.ComTypes;
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using Example4.ShopCode.EfCoreClasses;
 using Example4.ShopCode.EfCoreCode;
 using Microsoft.EntityFrameworkCore;

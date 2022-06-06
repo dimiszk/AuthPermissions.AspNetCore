@@ -18,6 +18,9 @@ using Example4.ShopCode.EfCoreCode;
 using GenericServices.Setup;
 using RunMethodsSequentially;
 using AuthPermissions.AspNetCore.StartupServices;
+using AuthPermissions.BaseCode.SetupCode;
+using Example4.ShopCode.RefreshUsersClaims;
+using ExamplesCommonCode.IdentityCookieCode;
 
 namespace Example4.MvcWebApp.IndividualAccounts
 {
@@ -45,18 +48,24 @@ namespace Example4.MvcWebApp.IndividualAccounts
             services.AddDefaultIdentity<IdentityUser>(options => 
                     options.SignIn.RequireConfirmedAccount = false)
                 .AddEntityFrameworkStores<ApplicationDbContext>();
+            services.ConfigureApplicationCookie(options =>
+            {
+                //this will cause all the logged-in users to have their claims updated when a tenant DataKey changes
+                options.Events.OnValidatePrincipal = TenantChangeCookieEvent.UpdateIfGlobalTimeChangedAsync;
+            });
+
             services.AddControllersWithViews()
                 .AddRazorRuntimeCompilation();
 
             services.RegisterAuthPermissions<Example4Permissions>(options =>
                 {
                     options.TenantType = TenantTypes.HierarchicalTenant;
-                    options.AppConnectionString = connectionString;
                     options.PathToFolderToLock = _env.WebRootPath;
                 })
                 //NOTE: This uses the same database as the individual accounts DB
                 .UsingEfCoreSqlServer(connectionString)
                 .IndividualAccountsAuthentication()
+                .RegisterAddClaimToUser<AddGlobalChangeTimeClaim>()
                 .RegisterTenantChangeService<RetailTenantChangeService>()
                 .AddRolesPermissionsIfEmpty(Example4AppAuthSetupData.RolesDefinition)
                 .AddTenantsIfEmpty(Example4AppAuthSetupData.TenantDefinition)

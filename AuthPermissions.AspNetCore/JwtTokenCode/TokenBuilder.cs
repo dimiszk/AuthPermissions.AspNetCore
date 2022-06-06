@@ -8,16 +8,17 @@ using System.Linq;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.Tasks;
-using AuthPermissions.CommonCode;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.EfCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
 using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 
 namespace AuthPermissions.AspNetCore.JwtTokenCode
 {
     /// <summary>
-    /// This contains the code to create/refresh JST tokens
+    /// This contains the code to create/refresh JWT tokens
     /// </summary>
     public class TokenBuilder : ITokenBuilder
     {
@@ -133,7 +134,8 @@ namespace AuthPermissions.AspNetCore.JwtTokenCode
                     $"The JTW token didn't contain a claim holding the UserId. Token = {tokenAndRefresh.Token}");
             }
             //b) Create a JWT containing the same data, but with a new Expired time
-            var tokenAndDesc = GenerateJwtTokenHandler(userId, claimsPrincipal.Claims);
+            var claims = await _claimsCalculator.GetClaimsForAuthUserAsync(userId);
+            var tokenAndDesc = GenerateJwtTokenHandler(userId, claims);
             var token = tokenAndDesc.tokenHandler.CreateToken(tokenAndDesc.tokenDescriptor);
             //c) Mark the refreshTokenFromDb as used
             refreshTokenFromDb.MarkAsInvalid();

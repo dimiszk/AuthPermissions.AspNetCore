@@ -2,7 +2,7 @@
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
 using AuthPermissions.AspNetCore;
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using Example3.MvcWebApp.IndividualAccounts.PermissionsCode;
 using ExamplesCommonCode.CommonAdmin;
 using Microsoft.AspNetCore.Mvc;
@@ -98,7 +98,7 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
         public async Task<IActionResult> Delete(string roleName)
         {
 
-            return View(await RoleDeleteConfirmDto.FormRoleDeleteConfirmDtoAsync(roleName, _authRolesAdmin));
+            return View(await MultiTenantRoleDeleteConfirmDto.FormRoleDeleteConfirmDtoAsync(roleName, _authRolesAdmin));
         }
 
         [HasPermission(Example3Permissions.RoleChange)]

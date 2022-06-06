@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using AuthPermissions;
 using AuthPermissions.AspNetCore;
-using AuthPermissions.AspNetCore.AccessTenantData;
 using AuthPermissions.AspNetCore.Services;
 using AuthPermissions.SetupCode;
 using Example3.InvoiceCode.AppStart;
@@ -16,6 +15,10 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using RunMethodsSequentially;
 using AuthPermissions.AspNetCore.StartupServices;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.SetupCode;
+using Example3.InvoiceCode.Services;
+using ExamplesCommonCode.IdentityCookieCode;
 
 namespace Example3.MvcWebApp.IndividualAccounts
 {
@@ -45,6 +48,11 @@ namespace Example3.MvcWebApp.IndividualAccounts
                 .AddEntityFrameworkStores<ApplicationDbContext>();
             services.AddControllersWithViews()
                 .AddRazorRuntimeCompilation();
+            services.ConfigureApplicationCookie(options =>
+            {
+                //this will cause all the logged-in users to have their claims periodically updated
+                options.Events.OnValidatePrincipal = PeriodicCookieEvent.PeriodicRefreshUsersClaims;
+            });
 
 
             services.RegisterAuthPermissions<Example3Permissions>(options =>
@@ -52,12 +60,13 @@ namespace Example3.MvcWebApp.IndividualAccounts
                     options.TenantType = TenantTypes.SingleLevel;
                     options.LinkToTenantType = LinkToTenantTypes.OnlyAppUsers;
                     options.EncryptionKey = _configuration[nameof(AuthPermissionsOptions.EncryptionKey)];
-                    options.AppConnectionString = connectionString;
                     options.PathToFolderToLock = _env.WebRootPath;
                 })
                 //NOTE: This uses the same database as the individual accounts DB
                 .UsingEfCoreSqlServer(connectionString)
                 .IndividualAccountsAuthentication()
+                .RegisterAddClaimToUser<AddTenantNameClaim>()
+                .RegisterAddClaimToUser<AddRefreshEveryMinuteClaim>()
                 .RegisterTenantChangeService<InvoiceTenantChangeService>()
                 .AddRolesPermissionsIfEmpty(Example3AppAuthSetupData.RolesDefinition)
                 .AddTenantsIfEmpty(Example3AppAuthSetupData.TenantDefinition)

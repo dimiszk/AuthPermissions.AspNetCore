@@ -6,10 +6,11 @@ using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions;
 using AuthPermissions.AdminCode.Services;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.SetupCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.SetupCode;
 using Microsoft.EntityFrameworkCore;
 using Test.TestHelpers;
 using TestSupport.EfHelpers;
@@ -103,7 +104,33 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
         }
 
         [Fact]
-        public async Task TestGetRoleNamesForUsersAsync()
+        public async Task TestUpdateDisabledAsyncOk()
+        {
+            //SETUP
+            var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
+            using var context = new AuthPermissionsDbContext(options);
+            context.Database.EnsureCreated();
+
+            await context.SetupRolesInDbAsync();
+            context.AddMultipleUsersWithRolesInDb();
+            context.ChangeTracker.Clear();
+
+            var service = new AuthUsersAdminService(context, null, new AuthPermissionsOptions { TenantType = TenantTypes.SingleLevel });
+
+            //ATTEMPT
+            var status = await service.UpdateDisabledAsync("User2", true);
+
+            //VERIFY
+            status.IsValid.ShouldBeTrue(status.GetAllErrors());
+            context.ChangeTracker.Clear();
+            var user2 = context.AuthUsers.Single(x => x.UserId == "User2");
+            user2.IsDisabled.ShouldBeTrue();
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task TestGetRoleNamesForUsersAsync(bool addNone)
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
@@ -124,15 +151,18 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             var service = new AuthUsersAdminService(context, null, new AuthPermissionsOptions { TenantType = TenantTypes.SingleLevel });
 
             //ATTEMPT
-            var roleNames = await service.GetRoleNamesForUsersAsync("User2");
+            var roleNames = await service.GetRoleNamesForUsersAsync("User2",addNone);
 
             //VERIFY
-            roleNames.ShouldEqual(new List<string> { "Role1", "Role2", "Role3", "NormalRole" });
+            var expected = new List<string> { "Role1", "Role2", "Role3", "NormalRole" };
+            if (addNone)
+                expected.Insert(0, CommonConstants.EmptyTenantName);
+            roleNames.ShouldEqual(expected);
         }
 
         [Theory]
         [InlineData(RoleTypes.Normal, true)]
-        [InlineData(RoleTypes.TenantAdminAdd, true)]
+        [InlineData(RoleTypes.TenantAdminAdd, false)]
         [InlineData(RoleTypes.TenantAutoAdd, false)]
         [InlineData(RoleTypes.HiddenFromTenant, false)]
         public async Task TestAddNewUserAsyncTenant(RoleTypes roleType, bool success)
@@ -157,15 +187,15 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
                 new List<string> { "Role1", "Role2" }, "Tenant1");
 
             //VERIFY
-            status.IsValid.ShouldEqual(success);
             if (status.HasErrors)
                 _output.WriteLine(status.GetAllErrors());
+            status.IsValid.ShouldEqual(success);
         }
 
         [Theory]
         [InlineData("User1@gmail.com", true)]
         [InlineData("bad.email", false)]
-        public async Task TestChangeEmailAsyncOk(string email, bool isValid)
+        public async Task TestUpdateUserAsync_ChangeNameOk(string email, bool isValid)
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
@@ -180,8 +210,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             var authUser = (await service.FindAuthUserByEmailAsync("User1@gmail.com")).Result;
 
             //ATTEMPT
-            var status = await service.UpdateUserAsync(authUser.UserId, email, "new user name",
-                authUser.UserRoles.Select(x => x.RoleName).ToList(), null);
+            var status = await service.UpdateUserAsync(authUser.UserId, email, "new user name");
 
             //VERIFY
             status.IsValid.ShouldEqual(isValid);
@@ -197,10 +226,11 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
         }
 
         [Theory]
-        [InlineData("Role1")]
-        [InlineData("Role1,Role2,Role3")]
-        [InlineData(null)]
-        public async Task TestChangeRolesAsyncOk(string roleNamesCommaDelimited)
+        [InlineData("Role1", "Role1")]
+        [InlineData("Role1,Role2,Role3", "Role1,Role2,Role3")]
+        [InlineData(null, "Role1,Role2")]
+        [InlineData(CommonConstants.EmptyTenantName, null)]
+        public async Task TestUpdateUserAsync_ChangeRolesOk(string roleNamesCommaDelimited, string expectedRolesCommaDelimited)
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
@@ -215,24 +245,23 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             var authUser = (await service.FindAuthUserByEmailAsync("User2@gmail.com")).Result;
 
             //ATTEMPT
-            var newRoleNames = roleNamesCommaDelimited == null 
-            ? new List<string>()
-            : roleNamesCommaDelimited.Split(',').ToList();
-            var status = await service.UpdateUserAsync(authUser.UserId, "User2@gmail.com", "new user name",
-                newRoleNames, null);
+            var newRoleNames = roleNamesCommaDelimited?.Split(',').ToList();
+            var status = await service.UpdateUserAsync(authUser.UserId, roleNames: newRoleNames);
 
             //VERIFY
             status.IsValid.ShouldBeTrue(status.GetAllErrors());
             context.ChangeTracker.Clear();
+            var expectedRolesName = expectedRolesCommaDelimited?.Split(',').ToList() ?? new List<string>();
             (await service.FindAuthUserByEmailAsync("User2@gmail.com")).Result.UserRoles
-                .Select(x => x.RoleName).OrderBy(x => x).ToList().ShouldEqual(newRoleNames);
+                .Select(x => x.RoleName).OrderBy(x => x).ToList().ShouldEqual(expectedRolesName);
         }
 
         [Theory]
-        [InlineData("Role1", true)]
-        [InlineData("Role3", true)]
-        [InlineData("Role99", false)]
-        public async Task TestAddRoleToUser(string roleName, bool isValid)
+        [InlineData(false, "Tenant2", "Tenant2")]
+        [InlineData(true, "Tenant2", "Tenant2")]
+        [InlineData(true, null, "Tenant1")]
+        [InlineData(true, CommonConstants.EmptyTenantName, null)]
+        public async Task TestUpdateUserAsync_ChangeTenantOk(bool addTenant1, string newTenantName, string expectedTenantName)
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
@@ -240,54 +269,31 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             context.Database.EnsureCreated();
 
             await context.SetupRolesInDbAsync();
-            context.AddMultipleUsersWithRolesInDb();
+            var tenant1 = Tenant.CreateSingleTenant("Tenant1").Result;
+            var tenant2 = Tenant.CreateSingleTenant("Tenant2").Result;
+            var user = AuthUser.CreateAuthUser("User1", "User1@gmail.com", "User1 Name", new List<RoleToPermissions>(),
+                addTenant1 ? tenant1 : null).Result;
+            context.AddRange(tenant1, tenant2, user);
+            context.SaveChanges();
             context.ChangeTracker.Clear();
 
             var service = new AuthUsersAdminService(context, null, new AuthPermissionsOptions { TenantType = TenantTypes.SingleLevel });
-            var authUser = (await service.FindAuthUserByEmailAsync("User2@gmail.com")).Result;
+            var authUser = (await service.FindAuthUserByUserIdAsync("User1")).Result;
 
             //ATTEMPT
-            var status = await service.AddRoleToUser(authUser, roleName);
+            var status = await service.UpdateUserAsync(authUser.UserId, tenantName: newTenantName);
 
             //VERIFY
-            status.IsValid.ShouldEqual(isValid);
-            _output.WriteLine(status.Message);
-            if (!isValid)
-                status.GetAllErrors().ShouldEqual("Could not find the role Role99");
-        }
-
-        [Theory]
-        [InlineData("Role1", true)]
-        [InlineData("Role3", true)]
-        [InlineData("Role99", false)]
-        public async Task TestRemoveRoleToUser(string roleName, bool isValid)
-        {
-            //SETUP
-            var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
-            using var context = new AuthPermissionsDbContext(options);
-            context.Database.EnsureCreated();
-
-            await context.SetupRolesInDbAsync();
-            context.AddMultipleUsersWithRolesInDb();
+            status.IsValid.ShouldBeTrue(status.GetAllErrors());
             context.ChangeTracker.Clear();
-
-            var service = new AuthUsersAdminService(context, null, new AuthPermissionsOptions { TenantType = TenantTypes.SingleLevel });
-            var authUser = (await service.FindAuthUserByEmailAsync("User2@gmail.com")).Result;
-
-            //ATTEMPT
-            var status = await service.RemoveRoleToUser(authUser, roleName);
-
-            //VERIFY
-            status.IsValid.ShouldEqual(isValid);
-            _output.WriteLine(status.Message);
-            if (!isValid)
-                status.GetAllErrors().ShouldEqual("Could not find the role Role99");
+            var readUser = (await service.FindAuthUserByUserIdAsync("User1")).Result;
+            readUser.UserTenant?.TenantFullName.ShouldEqual(expectedTenantName);
         }
 
         [Theory]
         [InlineData("Tenant1", true)]
         [InlineData("Bad Tenant name", false)]
-        public async Task TestChangeTenantToUserAsync(string tenantName, bool isValid)
+        public async Task TestUpdateUserAsync_BadTenant(string tenantName, bool isValid)
         {
             //SETUP
             var options = SqliteInMemory.CreateOptions<AuthPermissionsDbContext>();
@@ -303,8 +309,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             var authUser = (await service.FindAuthUserByEmailAsync("User2@gmail.com")).Result;
 
             //ATTEMPT
-            var status = await service.UpdateUserAsync(authUser.UserId, authUser.Email, authUser.UserName,
-                authUser.UserRoles.Select(x => x.RoleName).ToList(), tenantName);
+            var status = await service.UpdateUserAsync(authUser.UserId, tenantName: tenantName);
 
             //VERIFY
             status.IsValid.ShouldEqual(isValid);

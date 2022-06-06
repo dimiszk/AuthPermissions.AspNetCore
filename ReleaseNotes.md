@@ -1,5 +1,42 @@
 # Release Notes
 
+## 3.2.1
+
+- Bug fix: Second refresh JWT Bearer token failed. Fixed by @akema-trebla - see issue #36 (thanks to @akema-trebla)
+- Bug fix: TenantRoles would give an exception if the _tenantRoles was null - see pull request #45 (thanks to @emorell96)
+
+## 3.2.0
+
+- BREAKING CHANGE: The 3.0.0 sharding didn't work with Azure, so the way to define databases for sharding has changed - see issue #29 and docs: Setup -> Multi tenant configuration -> Sharding database settings
+- Improvement: The AuthUserAdmin method called `UpdateUserAsync` now allows you to select which properties you want to update - see docs: Admin -> AuthUser admin.
+- Removed: Removed AuthUserAdmin methods 1AddRoleToUser` and `RemoveRoleToUser` as the change to the `UpdateUserAsync` covers this.
+
+## 3.1.0
+
+- New feature: Now supports PostgreSQL database
+- NOTE: A lot of namespaces changed to support SqlServer and PostgreSQL
+
+## 3.0.0
+
+- BREAKING CHANGE: The ITenantChangeService has changed to allow multi-tenant sharding to be added - see the UpdateToVersion2.md file for more info
+- BREAKING CHANGE: The option called AppConnectionString has been removed. Its longer needed because of ITenantChangeService change
+- Changes to the AuthP database which contains a non-breaking migration. This will be automatically added on startup. 
+- New Feature: Adding optional sharding to either a single-level or hierarchical multi-tenant applications - see documentation for an article explaining how to setup sharding
+- New Feature: You can mark an AuthUser as disabled, which means no AuthP claims will be added to the user's claims.
+
+
+## 2.3.1
+
+- Bug Fix: Problem in ClaimCalculator when used with multi-tenant applications - see issue #23 
+
+## 2.3.0
+
+- New Feature: You can add extra claims to the user via the RegisterAddClaimToUser method
+- New Feature: Tap into AuthPermissionsDbContext events by registering a service implmenting the IRegisterStateChangeEvent interface
+- Bug Fix: UpdateRoleToPermissionsAsync now return errors if a Role change is invalid for a user or tenants that is that Role - see issue #13
+- Bug Fix: DeleteRoleAsync now handles tenant Roles - see issue #13
+- Bug Fix: Add or update of an AuthUser now checks the tenant has the correct Roles - see issue #15
+
 ## 2.2.0
 
 - New Feature: Added "Access the data of other tenant" feature - see issue #10

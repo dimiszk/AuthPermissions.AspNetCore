@@ -5,10 +5,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.SetupCode;
+using AuthPermissions.AdminCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.SetupCode;
 using Microsoft.EntityFrameworkCore;
 using StatusGeneric;
 
@@ -52,14 +54,14 @@ namespace AuthPermissions.BulkLoadServices.Concrete
                 return status;
 
             //Check the options are set
-            if (options.TenantType == TenantTypes.NotUsingTenants)
+            if (!options.TenantType.IsMultiTenant())
                 return status.AddError(
                     $"You must set the options {nameof(AuthPermissionsOptions.TenantType)} to allow tenants to be processed");
 
             //This takes a COPY of the data because the code stores a tracked tenant in the database
             var tenantsSetupCopy = tenantSetupData.ToList();
 
-            if (options.TenantType == TenantTypes.SingleLevel)
+            if (options.TenantType.IsSingleLevel())
             {
                 var duplicateNames = tenantsSetupCopy.Select(x => x.TenantName)
                     .GroupBy(x => x).Where(x => x.Count() > 1).Select(x => x.Key).ToList();
@@ -74,8 +76,13 @@ namespace AuthPermissions.BulkLoadServices.Concrete
                         tenantDefinition.TenantName);
                     status.CombineStatuses(rolesStatus);
                     var tenantStatus = Tenant.CreateSingleTenant(tenantDefinition.TenantName, rolesStatus.Result);
+                    
                     if (status.CombineStatuses(tenantStatus).IsValid)
+                    {
+                        if ((options.TenantType & TenantTypes.AddSharding) != 0)
+                            tenantStatus.Result.UpdateShardingState(options.ShardingDefaultDatabaseInfoName, false);
                         _context.Add(tenantStatus.Result);
+                    }
                 }
 
                 if (status.HasErrors)
@@ -121,6 +128,9 @@ namespace AuthPermissions.BulkLoadServices.Concrete
 
                         if (status.IsValid)
                         {
+                            _context.Add(newTenantStatus.Result);
+                            if ((options.TenantType & TenantTypes.AddSharding) != 0)
+                                newTenantStatus.Result.UpdateShardingState(options.ShardingDefaultDatabaseInfoName, false);
                             status.CombineStatuses(await _context.SaveChangesWithChecksAsync());
 
                             //Now we copy the data so that a child can access to the parent data

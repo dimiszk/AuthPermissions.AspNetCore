@@ -1,6 +1,7 @@
 ﻿// Copyright (c) 2021 Jon P Smith, GitHub: JonPSmith, web: http://www.thereformedprogrammer.net/
 // Licensed under MIT license. See License.txt in the project root for license information.
 
+using System;
 using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions;
@@ -8,9 +9,11 @@ using AuthPermissions.AdminCode;
 using AuthPermissions.AspNetCore;
 using AuthPermissions.AspNetCore.Services;
 using AuthPermissions.AspNetCore.StartupServices;
-using AuthPermissions.DataLayer.EfCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.SetupCode;
 using AuthPermissions.SetupCode;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using RunMethodsSequentially;
@@ -32,6 +35,59 @@ namespace Test.UnitTests.TestAuthPermissionsAspNetCore
             _output = output;
         }
 
+        private enum EnumNotShort {One, Two}
+
+        [Fact]
+        public async Task TestRegisterAuthPermissionsEnumNotShort()
+        {
+            //SETUP
+            var services = this.SetupServicesForTest();
+
+            //ATTEMPT
+            var ex = await Assert.ThrowsAsync<AuthPermissionsException>(async () => 
+                await services.RegisterAuthPermissions<EnumNotShort>()
+                .UsingInMemoryDatabase()
+                .SetupForUnitTestingAsync());
+
+            //VERIFY
+            ex.Message.ShouldStartWith($"The enum permissions {nameof(EnumNotShort)} should by 16 bits in size to work");
+        }
+
+        [Theory]
+        [InlineData(TenantTypes.NotUsingTenants, true)]
+        [InlineData(TenantTypes.SingleLevel, true)]
+        [InlineData(TenantTypes.HierarchicalTenant, true)]
+        [InlineData(TenantTypes.SingleLevel | TenantTypes.AddSharding, true)]
+        [InlineData(TenantTypes.HierarchicalTenant | TenantTypes.AddSharding, true)]
+        [InlineData(TenantTypes.SingleLevel | TenantTypes.HierarchicalTenant, false)]
+        [InlineData(TenantTypes.AddSharding, false)]
+        public async Task TestRegisterAuthPermissionsMultiTenantChecks(TenantTypes tenantType, bool success)
+        {
+            //SETUP
+            var services = this.SetupServicesForTest();
+
+            //ATTEMPT
+            try
+            {
+                await services.RegisterAuthPermissions<TestEnum>(
+                        options =>
+                        {
+                            options.TenantType = tenantType;
+                            options.Configuration = new ConfigurationManager();
+                        })
+                    .UsingInMemoryDatabase()
+                    .SetupForUnitTestingAsync();
+            }
+            catch (Exception e)
+            {
+                _output.WriteLine(e.Message);
+                success.ShouldBeFalse();
+                return;
+            }
+
+            //VERIFY
+            success.ShouldBeTrue();
+        }
 
         [Fact]
         public void TestSetupAspNetCoreSetupAspNetCorePartHostedService()

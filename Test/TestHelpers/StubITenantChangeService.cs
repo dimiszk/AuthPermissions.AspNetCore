@@ -2,60 +2,62 @@
 // Licensed under MIT license. See License.txt in the project root for license information.
 
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
 using AuthPermissions.SetupCode.Factories;
-using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore;
 
 namespace Test.TestHelpers
 {
 
     public class StubITenantChangeServiceFactory : IAuthPServiceFactory<ITenantChangeService>
     {
-        private readonly DbContext _appContext;
         private readonly string _errorMessage;
 
         public string NewTenantName { get; set; }
 
-        public List<(string oldDataKey, string newDataKey, int tenantId, string newFullTenantName)> MoveReturnedTuples =
-            new List<(string oldDataKey, string newDataKey, int tenantId, string newFullTenantName)>();
+        public List<(string oldDataKey, string newDataKey, int tenantId, string newFullTenantName)> MoveReturnedTuples = new ();
 
-        public StubITenantChangeServiceFactory(DbContext appContext, string errorMessage = null)
+
+        public StubITenantChangeServiceFactory(string errorMessage = null)
         {
-            _appContext = appContext;
             _errorMessage = errorMessage;
+        }
+
+
+        public ITenantChangeService GetService(bool throwExceptionIfNull = true)
+        {
+            return new StubITenantChangeService(this, _errorMessage);
         }
 
         public class StubITenantChangeService : ITenantChangeService
         {
-            private readonly DbContext _appContext;
             private readonly StubITenantChangeServiceFactory _factory;
             private readonly string _errorMessage;
 
-            public List<(string dataKey, string fullTenantName)> DeleteReturnedTuples { get; } =
-                new List<(string fullTenantName, string dataKey)>();
+            public List<(string dataKey, string fullTenantName)> DeleteReturnedTuples { get; } = new ();
 
-            public StubITenantChangeService(DbContext appContext, StubITenantChangeServiceFactory factory, string errorMessage)
+            public StubITenantChangeService(StubITenantChangeServiceFactory factory, string errorMessage)
             {
-                _appContext = appContext;
                 _factory = factory;
                 _errorMessage = errorMessage;
             }
 
-            public DbContext GetNewInstanceOfAppContext(SqlConnection sqlConnection)
+            public Task<string> CreateNewTenantAsync(Tenant tenant)
             {
-                return _appContext;
-            }
-
-            public Task<string> CreateNewTenantAsync(DbContext appTransactionContext, string dataKey, int tenantId, string fullTenantName)
-            {
-                _factory.NewTenantName = fullTenantName;
+                _factory.NewTenantName = tenant.TenantFullName;
 
                 return Task.FromResult(_errorMessage);
             }
 
-            public Task<string> HandleTenantDeleteAsync(DbContext appTransactionContext, string dataKey, int tenantId,
+            public Task<string> SingleTenantUpdateNameAsync(Tenant tenant)
+            {
+                return Task.FromResult(_errorMessage);
+            }
+
+            public Task<string> HandleTenantDeleteAsync(string dataKey, int tenantId,
                 string fullTenantName)
             {
                 DeleteReturnedTuples.Add((fullTenantName, dataKey));
@@ -63,23 +65,44 @@ namespace Test.TestHelpers
                 return Task.FromResult(_errorMessage);
             }
 
-            public Task<string> HandleUpdateNameAsync(DbContext appTransactionContext, string dataKey, int tenantId, string fullTenantName)
+            public Task<string> SingleTenantDeleteAsync(Tenant tenant)
+            {
+                DeleteReturnedTuples.Add((tenant.GetTenantDataKey(), tenant.TenantFullName));
+
+                return Task.FromResult(_errorMessage);
+            }
+
+            public Task<string> HierarchicalTenantUpdateNameAsync(List<Tenant> tenantsToUpdate)
             {
                 return Task.FromResult(_errorMessage);
             }
 
-            public Task<string> MoveHierarchicalTenantDataAsync(DbContext appTransactionContext, string oldDataKey, string newDataKey, int tenantId,
-                string newFullTenantName)
+            public Task<string> HierarchicalTenantDeleteAsync(List<Tenant> tenantsInOrder)
             {
-                _factory.MoveReturnedTuples.Add((oldDataKey, newDataKey, tenantId, newFullTenantName));
+                DeleteReturnedTuples.AddRange( tenantsInOrder.Select(x => (x.TenantFullName, x.GetTenantDataKey())));
 
+                return Task.FromResult(_errorMessage);
+            }
+
+            public Task<string> MoveHierarchicalTenantDataAsync(List<(string oldDataKey, Tenant tenantToMove)> tenantToUpdate)
+            {
+                _factory.MoveReturnedTuples = tenantToUpdate.Select(x =>
+                    (x.oldDataKey, x.tenantToMove.GetTenantDataKey(), x.tenantToMove.TenantId, x.tenantToMove.TenantFullName)
+                ).ToList();
+                return Task.FromResult(_errorMessage);
+            }
+
+            public Task<string> MoveToDifferentDatabaseAsync(string oldDatabaseInfoName,
+                string oldDataKey,
+                Tenant updatedTenant)
+            {
                 return Task.FromResult(_errorMessage);
             }
         }
 
         public ITenantChangeService GetService(bool throwExceptionIfNull = true, string callingMethod = "")
         {
-            return new StubITenantChangeService(_appContext, this, _errorMessage);
+            return new StubITenantChangeService(this, _errorMessage);
         }
     }
 }

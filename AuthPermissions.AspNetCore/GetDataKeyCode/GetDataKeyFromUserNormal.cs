@@ -1,15 +1,15 @@
 ﻿// Copyright (c) 2021 Jon P Smith, GitHub: JonPSmith, web: http://www.thereformedprogrammer.net/
 // Licensed under MIT license. See License.txt in the project root for license information.
 
-using AuthPermissions.CommonCode;
+using AuthPermissions.BaseCode.CommonCode;
 using Microsoft.AspNetCore.Http;
 
 namespace AuthPermissions.AspNetCore.GetDataKeyCode
 {
 
     /// <summary>
-    /// This service is registered if a multi-tenant setup is defined <see cref="AuthPermissionsOptions.TenantType"/>
-    /// NOTE: There is a <see cref="GetDataKeyFromUserAccessTenantData"/> version if the "Access the data of other tenant" is turned on
+    /// This service is registered if a multi-tenant setup without sharding
+    /// NOTE: There are other version if the "Access the data of other tenant" is turned on
     /// </summary>
     public class GetDataKeyFromUserNormal : IGetDataKeyFromUser
     {

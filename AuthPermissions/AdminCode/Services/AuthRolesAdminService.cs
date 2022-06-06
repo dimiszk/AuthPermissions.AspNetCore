@@ -5,13 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using AuthPermissions.CommonCode;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.PermissionsCode;
-using AuthPermissions.PermissionsCode.Internal;
-using AuthPermissions.SetupCode;
+using AuthPermissions.AdminCode.Services.Internal;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.PermissionsCode;
 using Microsoft.EntityFrameworkCore;
 using StatusGeneric;
 
@@ -35,7 +35,7 @@ namespace AuthPermissions.AdminCode.Services
         {
             _context = context;
             _permissionType = options.InternalData.EnumPermissionsType;
-            _isMultiTenant = options.TenantType != TenantTypes.NotUsingTenants;
+            _isMultiTenant = options.TenantType.IsMultiTenant();
         }
 
         /// <summary>
@@ -86,6 +86,17 @@ namespace AuthPermissions.AdminCode.Services
         {
             return _context.AuthUsers.Where(x => x.UserRoles.Any(y => y.RoleName == roleName));
         }
+
+        /// <summary>
+        /// This returns a query containing all the Tenants that have given role name
+        /// </summary>
+        /// <param name="roleName"></param>
+        /// <returns></returns>
+        public IQueryable<Tenant> QueryTenantsUsingThisRole(string roleName)
+        {
+            return _context.Tenants.Where(x => x.TenantRoles.Any(y => y.RoleName == roleName));
+        }
+
 
         /// <summary>
         /// This adds a new RoleToPermissions with the given description and permissions defined by the names 
@@ -147,6 +158,8 @@ namespace AuthPermissions.AdminCode.Services
             if (existingRolePermission == null)
                 return status.AddError($"Could not find a role called {roleName}", nameof(roleName).CamelToPascal());
 
+            var originalRoleType = existingRolePermission.RoleType;
+
             var packedPermissions = _permissionType.PackPermissionsNamesWithValidation(permissionNames,
                 x => status.AddError($"The permission name '{x}' isn't a valid name in the {_permissionType.Name} enum.", 
                     nameof(permissionNames).CamelToPascal()), 
@@ -157,6 +170,15 @@ namespace AuthPermissions.AdminCode.Services
 
             if (!packedPermissions.Any())
                 return status.AddError("You must provide at least one permission name.", nameof(permissionNames).CamelToPascal());
+
+            if (originalRoleType != roleType)
+            {
+                //We need to check that the new RoleType matches where they are used
+                var roleChecker = new ChangeRoleTypeChecks(_context);
+                if (status.CombineStatuses(
+                        await roleChecker.CheckRoleTypeChangeAsync(originalRoleType, roleType,roleName)).HasErrors)
+                    return status;
+            }
 
             existingRolePermission.Update(packedPermissions, description, roleType);
             status.CombineStatuses(await _context.SaveChangesWithChecksAsync());
@@ -174,7 +196,7 @@ namespace AuthPermissions.AdminCode.Services
         /// <returns>status</returns>
         public async Task<IStatusGeneric> DeleteRoleAsync(string roleName, bool removeFromUsers)
         {
-            var status = new StatusGenericHandler {Message = $"Successfully deleted the role {roleName}."};
+            var status = new StatusGenericHandler {Message = $"Successfully deleted the role {roleName}"};
 
             var existingRolePermission =
                 await _context.RoleToPermissions.SingleOrDefaultAsync(x => x.RoleName == roleName);
@@ -182,15 +204,27 @@ namespace AuthPermissions.AdminCode.Services
             if (existingRolePermission == null)
                 return status.AddError($"Could not find a role called {roleName}", nameof(roleName).CamelToPascal());
 
-            var usersWithRoles = _context.UserToRoles.Where(x => x.RoleName == roleName).ToList();
+            var usersWithRoles = await _context.UserToRoles.Where(x => x.RoleName == roleName).ToListAsync();
+            int tenantCount = existingRolePermission.RoleType == RoleTypes.TenantAdminAdd || existingRolePermission.RoleType == RoleTypes.TenantAutoAdd
+                ? await QueryTenantsUsingThisRole(roleName).CountAsync() : 0;
+            if (!removeFromUsers)
+            {
+                if (usersWithRoles.Any())
+                    status.AddError($"That role is used in {usersWithRoles.Count} AuthUsers and you didn't confirm the delete.", 
+                    nameof(roleName).CamelToPascal());
+
+                if (tenantCount > 0)
+                    status.AddError(
+                        $"That role is used in {usersWithRoles.Count} tenants and you didn't confirm the delete.",
+                        nameof(roleName).CamelToPascal());
+
+                if (status.HasErrors)
+                    return status;
+            }
+
             if (usersWithRoles.Any())
             {
-                if (!removeFromUsers)
-                    return status.AddError(
-                        $"That role is used in {usersWithRoles.Count} AuthUsers and you didn't confirm the delete.", nameof(roleName).CamelToPascal());
-
                 _context.RemoveRange(usersWithRoles);
-                status.Message = $"Successfully deleted the role {roleName} and removed that role from {usersWithRoles.Count} users.";
             }
 
             if (status.HasErrors)
@@ -199,6 +233,11 @@ namespace AuthPermissions.AdminCode.Services
             _context.Remove(existingRolePermission);
             status.CombineStatuses(await _context.SaveChangesWithChecksAsync());
 
+            if (usersWithRoles.Any())
+                status.Message += $" and removed that role from {usersWithRoles.Count} users";
+            if (tenantCount > 0)
+                status.Message += $" and removed that role from {tenantCount} tenants";
+            status.Message += ".";
             return status;
         }
 

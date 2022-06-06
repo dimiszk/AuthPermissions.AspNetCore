@@ -6,10 +6,13 @@ using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions;
 using AuthPermissions.AdminCode.Services;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.DataLayer.EfCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.SetupCode;
 using AuthPermissions.SetupCode;
 using EntityFramework.Exceptions.SqlServer;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Test.TestHelpers;
 using TestSupport.EfHelpers;
 using Xunit;
@@ -62,7 +65,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             using var context = new AuthPermissionsDbContext(options);
             context.Database.EnsureCreated();
 
-            var setupUser = new SetupUserWithRoles(context, role2Type, hasTenant);
+            var setupUser = context.SetupUserWithDifferentRoleTypes(role2Type, hasTenant);
 
             var service = new AuthRolesAdminService(context, new AuthPermissionsOptions
             {
@@ -71,7 +74,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             });
 
             //ATTEMPT
-            var roles = service.QueryRoleToPermissions(setupUser.CurrentUser.UserId).ToList();
+            var roles = service.QueryRoleToPermissions(setupUser.UserId).ToList();
 
             //VERIFY
             foreach (var role in roles)
@@ -139,7 +142,10 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
         {
             //SETUP
             var options = this.CreateUniqueClassOptions<AuthPermissionsDbContext>(builder =>
-                builder.UseExceptionProcessor());
+            {
+                builder.UseExceptionProcessor();
+                builder.ReplaceService<IModelCacheKeyFactory, DynamicModelCacheKeyFactory>();
+            });
             using var context = new AuthPermissionsDbContext(options);
             context.Database.EnsureClean();
 

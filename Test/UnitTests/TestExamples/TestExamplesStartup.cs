@@ -17,6 +17,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using RunMethodsSequentially;
 using System.Threading.Tasks;
+using AuthPermissions.BaseCode.SetupCode;
 using Test.TestHelpers;
 using TestSupport.Helpers;
 using Xunit;
@@ -63,7 +64,6 @@ namespace Test.UnitTests.TestExamples
             services.RegisterAuthPermissions<Example3Permissions>(options =>
                 {
                     options.TenantType = TenantTypes.HierarchicalTenant;
-                    options.AppConnectionString = connectionString;
                     options.PathToFolderToLock = TestData.GetTestDataDir();
                 })
                 //NOTE: This uses the same database as the individual accounts DB
@@ -115,7 +115,6 @@ namespace Test.UnitTests.TestExamples
             builder.Services.RegisterAuthPermissions<Example3Permissions>(options =>
             {
                 options.TenantType = TenantTypes.HierarchicalTenant;
-                options.AppConnectionString = connectionString;
                 options.PathToFolderToLock = builder.LockFolderPath;
             })
                 //NOTE: This uses the same database as the individual accounts DB

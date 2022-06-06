@@ -5,11 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using AuthPermissions.AdminCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.SetupCode;
 using AuthPermissions.BulkLoadServices.Concrete.Internal;
-using AuthPermissions.CommonCode;
-using AuthPermissions.DataLayer.Classes;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.SetupCode;
 using AuthPermissions.SetupCode.Factories;
 using Microsoft.EntityFrameworkCore;
 using StatusGeneric;
@@ -39,7 +41,7 @@ namespace AuthPermissions.BulkLoadServices.Concrete
         }
 
         /// <summary>
-        /// This allows you to add a series of users with their roles and the tenant (if <see cref="AuthPermissions.AuthPermissionsOptions.TenantType"/> says tenants are used
+        /// This allows you to add a series of users with their roles and the tenant (if <see cref="AuthPermissionsOptions.TenantType"/> says tenants are used
         /// </summary>
         /// <param name="userDefinitions">A list of <see cref="BulkLoadUserWithRolesTenant"/> containing the information on users and what auth roles they have.
         /// In this case the UserId must be filled in with the authorized users' UserId, or the <see cref="IFindUserInfoService"/> can find a user's ID
@@ -108,7 +110,7 @@ namespace AuthPermissions.BulkLoadServices.Concrete
                     (findUserInfoService == null ? " wasn't available." : " couldn't find it either.")));
 
             Tenant userTenant = null;
-            if (_options.TenantType != TenantTypes.NotUsingTenants && !string.IsNullOrEmpty(userDefine.TenantNameForDataKey))
+            if (_options.TenantType.IsMultiTenant() && !string.IsNullOrEmpty(userDefine.TenantNameForDataKey))
             {
                 userTenant = await _context.Tenants.SingleOrDefaultAsync(x => x.TenantFullName == userDefine.TenantNameForDataKey);
                 if (userTenant == null)

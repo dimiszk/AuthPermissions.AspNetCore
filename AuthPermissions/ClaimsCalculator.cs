@@ -5,35 +5,44 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using AuthPermissions.DataLayer.Classes.SupportTypes;
-using AuthPermissions.DataLayer.EfCode;
-using AuthPermissions.PermissionsCode;
-using AuthPermissions.SetupCode;
+using AuthPermissions.AdminCode;
+using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.BaseCode.DataLayer.Classes;
+using AuthPermissions.BaseCode.DataLayer.Classes.SupportTypes;
+using AuthPermissions.BaseCode.DataLayer.EfCode;
+using AuthPermissions.BaseCode.PermissionsCode;
 using Microsoft.EntityFrameworkCore;
 
 namespace AuthPermissions
 {
     /// <summary>
     /// This service returns the authPermission claims for an AuthUser
+    /// and any extra claims registered using AuthP's AddClaimToUser method when registering AuthP
     /// </summary>
     public class ClaimsCalculator : IClaimsCalculator
     {
         private readonly AuthPermissionsDbContext _context;
         private readonly AuthPermissionsOptions _options;
+        private readonly IEnumerable<IClaimsAdder> _claimsAdders;
 
         /// <summary>
         /// Ctor
         /// </summary>
         /// <param name="context"></param>
         /// <param name="options"></param>
-        public ClaimsCalculator(AuthPermissionsDbContext context, AuthPermissionsOptions options)
+        /// <param name="claimAdders"></param>
+        public ClaimsCalculator(AuthPermissionsDbContext context, 
+            AuthPermissionsOptions options,
+                IEnumerable<IClaimsAdder> claimAdders)
         {
             _context = context;
             _options = options;
+            _claimsAdders = claimAdders;
         }
 
         /// <summary>
-        /// This will return the 
+        /// This will return the required AuthP claims, plus any extra claims from registered <see cref="IClaimsAdder"/> methods  
         /// </summary>
         /// <param name="userId"></param>
         /// <returns></returns>
@@ -41,14 +50,26 @@ namespace AuthPermissions
         {
             var result = new List<Claim>();
 
+            var userWithTenant = await _context.AuthUsers.Where(x => x.UserId == userId)
+                .Include(x => x.UserTenant)
+                .SingleOrDefaultAsync();
+
+            if (userWithTenant == null || userWithTenant.IsDisabled)
+                return result;
+
             var permissions = await CalcPermissionsForUserAsync(userId);
-            if (permissions != null)
+            if (permissions != null) 
                 result.Add(new Claim(PermissionConstants.PackedPermissionClaimType, permissions));
 
-            var dataKey = await GetDataKeyAsync(userId);
-            if (dataKey != null)
-                result.Add(new Claim(PermissionConstants.DataKeyClaimType, dataKey));
-            
+            if (_options.TenantType.IsMultiTenant())
+                result.AddRange(GetMultiTenantClaims(userWithTenant.UserTenant));
+
+            foreach (var claimsAdder in _claimsAdders)
+            {
+                var extraClaim = await claimsAdder.AddClaimToUserAsync(userId);
+                if (extraClaim != null)
+                    result.Add(extraClaim);
+            }
 
             return result;
         }
@@ -65,21 +86,24 @@ namespace AuthPermissions
         private async Task<string> CalcPermissionsForUserAsync(string userId)
         {
             //This gets all the permissions, with a distinct to remove duplicates
-            var permissionsForAllRoles = (await _context.UserToRoles.Where(x => x.UserId == userId)
+            var permissionsForAllRoles = await _context.UserToRoles
+                .Where(x => x.UserId == userId)
                 .Select(x => x.Role.PackedPermissionsInRole)
-                .ToListAsync());
+                .ToListAsync();
 
-            if (_options.TenantType != TenantTypes.NotUsingTenants)
+            if (_options.TenantType.IsMultiTenant())
             {
                 //We need to add any RoleTypes.TenantAdminAdd for a tenant user
 
-                var autoAddRoles = await _context.AuthUsers
+                var autoAddPermissions = await _context.AuthUsers
                     .Where(x => x.UserId == userId && x.TenantId != null)
-                    .Select(x => x.UserTenant.TenantRoles.Where(y => y.RoleType == RoleTypes.TenantAutoAdd))
-                    .SingleOrDefaultAsync();
+                    .SelectMany(x => x.UserTenant.TenantRoles
+                        .Where(y => y.RoleType == RoleTypes.TenantAutoAdd)
+                        .Select(z => z.PackedPermissionsInRole))
+                    .ToListAsync();
 
-                if (autoAddRoles != null)
-                    permissionsForAllRoles.AddRange(autoAddRoles.Select(x => x.PackedPermissionsInRole));
+                if (autoAddPermissions.Any())
+                    permissionsForAllRoles.AddRange(autoAddPermissions);
             }
 
             if (!permissionsForAllRoles.Any())
@@ -92,19 +116,27 @@ namespace AuthPermissions
         }
 
         /// <summary>
-        /// This return the multi-tenant data key if one is found
+        /// This adds the correct claims for a multi-tenant application
         /// </summary>
-        /// <param name="userid"></param>
-        /// <returns>Returns the dataKey, or null if a) tenant isn't turned on, or b) the user doesn't have a tenant</returns>
-        private async Task<string> GetDataKeyAsync(string userid)
+        /// <param name="tenant"></param>
+        /// <returns></returns>
+        private List<Claim> GetMultiTenantClaims(Tenant tenant)
         {
-            if (_options.TenantType == TenantTypes.NotUsingTenants)
-                return null;
+            var result = new List<Claim>();
 
-            var userWithTenant = await _context.AuthUsers.Include(x => x.UserTenant)
-                .SingleOrDefaultAsync(x => x.UserId == userid);
+            if (tenant == null)
+                return result;
 
-            return userWithTenant?.UserTenant?.GetTenantDataKey();
+            var dataKey = tenant.GetTenantDataKey();
+
+            result.Add(new Claim(PermissionConstants.DataKeyClaimType, dataKey));
+
+            if (_options.TenantType.IsSharding())
+            {
+                result.Add(new Claim(PermissionConstants.DatabaseInfoNameType, tenant.DatabaseInfoName));
+            }
+
+            return result;
         }
     }
 }
