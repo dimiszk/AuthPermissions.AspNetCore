@@ -124,11 +124,10 @@ namespace AuthPermissions.BaseCode.DataLayer.Classes
         /// </summary>
         public IReadOnlyCollection<Tenant> Children => _children?.ToList();
 
-
         /// <summary>
         /// This holds any Roles that have been specifically 
         /// </summary>
-        public IReadOnlyCollection<RoleToPermissions> TenantRoles => _tenantRoles?.ToList() ?? new List<RoleToPermissions>();
+        public IReadOnlyCollection<RoleToPermissions> TenantRoles => _tenantRoles?.ToList();
         /// <summary>
         /// Easy way to see the tenant and its key
         /// </summary>
@@ -152,11 +151,11 @@ namespace AuthPermissions.BaseCode.DataLayer.Classes
         /// <summary>
         /// This allows you to change the sharding information for this tenant
         /// </summary>
-        /// <param name="nawDatabaseInfoName">This contains the name of database data in the shardingsettings.json file</param>
+        /// <param name="newDatabaseInfoName">This contains the name of database data in the shardingsettings.json file</param>
         /// <param name="hasOwnDb">true if it is the only tenant in its database</param>
-        public void UpdateShardingState(string nawDatabaseInfoName, bool hasOwnDb)
+        public void UpdateShardingState(string newDatabaseInfoName, bool hasOwnDb)
         {
-            DatabaseInfoName = nawDatabaseInfoName ?? throw new ArgumentNullException(nameof(nawDatabaseInfoName));
+            DatabaseInfoName = newDatabaseInfoName ?? throw new ArgumentNullException(nameof(newDatabaseInfoName));
             HasOwnDb = hasOwnDb;
         }
 

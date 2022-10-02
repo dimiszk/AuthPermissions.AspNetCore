@@ -16,9 +16,10 @@ namespace Example6.MvcWebApp.Sharding.Models
 
         [Required(AllowEmptyStrings = false)]
         [MaxLength(AuthDbConstants.TenantFullNameSize)]
+
         public string TenantName { get; set; }
 
-        public string DataKey { get; private set; }
+        public string DataKey { get; set; }
 
 
         [Required(AllowEmptyStrings = false)]
@@ -60,7 +61,6 @@ namespace Example6.MvcWebApp.Sharding.Models
                 TenantId = tenantId,
                 TenantName = tenant.TenantFullName,
                 DataKey = tenant.GetTenantDataKey()
-
             };
         }
     }

@@ -12,9 +12,11 @@ using AuthPermissions.BaseCode.DataLayer.EfCode;
 using AuthPermissions.BaseCode.SetupCode;
 using AuthPermissions.SetupCode;
 using Example4.MvcWebApp.IndividualAccounts.PermissionsCode;
+using Example6.MvcWebApp.Sharding.PermissionsCode;
 using ExamplesCommonCode.CommonAdmin;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Test.TestHelpers;
+using Test.StubClasses;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Extensions.AssertExtensions;
@@ -41,6 +43,26 @@ namespace Test.UnitTests.TestExamples
                 .AddRolesPermissionsIfEmpty(Example4AppAuthSetupData.RolesDefinition)
                 .AddTenantsIfEmpty(Example4AppAuthSetupData.TenantDefinition)
                 .AddAuthUsersIfEmpty(Example4AppAuthSetupData.UsersRolesDefinition)
+                .RegisterFindUserInfoService<StubIFindUserInfoFactory.StubIFindUserInfo>()
+                .SetupForUnitTestingAsync();
+
+            var context = serviceProvider.GetRequiredService<AuthPermissionsDbContext>();
+
+            return (context, serviceProvider);
+        }
+
+        private async Task<(AuthPermissionsDbContext context, ServiceProvider serviceProvider)> SetupExample6DataAsync()
+        {
+            var services = new ServiceCollection();
+            var serviceProvider = await services.RegisterAuthPermissions<Example6Permissions>(options =>
+                {
+                    options.TenantType = TenantTypes.SingleLevel | TenantTypes.AddSharding;
+                    options.Configuration = new ConfigurationManager();
+                })
+                .UsingInMemoryDatabase()
+                .AddRolesPermissionsIfEmpty(Example6AppAuthSetupData.RolesDefinition)
+                .AddTenantsIfEmpty(Example6AppAuthSetupData.TenantDefinition)
+                .AddAuthUsersIfEmpty(Example6AppAuthSetupData.UsersRolesDefinition)
                 .RegisterFindUserInfoService<StubIFindUserInfoFactory.StubIFindUserInfo>()
                 .SetupForUnitTestingAsync();
 
@@ -101,7 +123,7 @@ namespace Test.UnitTests.TestExamples
 
             //VERIFY
             status.IsValid.ShouldBeTrue(status.GetAllErrors());
-            status.Result.Email.ShouldEqual(userId);
+            status.Result.Email.ShouldEqual(userId.ToLower());
             status.Result.UserName.ShouldEqual(userId);
             status.Result.RoleNames.OrderBy(x => x).ToList().ShouldEqual(new List<string> { "Area Manager", "Tenant Admin" });
             status.Result.TenantName.ShouldEqual("4U Inc.");
@@ -131,26 +153,63 @@ namespace Test.UnitTests.TestExamples
             status.Result.AllRoleNames.Count.ShouldEqual(numRoles);
         }
 
-        [Fact]
-        public async Task TestExample4QueryAuthUsers()
+        [Theory]
+        [InlineData(true, 10)]
+        [InlineData(false, 18)]
+        public async Task TestExample4QueryAuthUsers_DataKey(bool useDataKey, int numUsersExpected)
         {
             //SETUP
             var cAnds = await SetupExample4DataAsync();
 
             var adminUserService = cAnds.serviceProvider.GetRequiredService<IAuthUsersAdminService>();
             var userId = "admin@4uInc.com";
-            var dataKey = (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result.UserTenant.GetTenantDataKey();
+            var dataKey = useDataKey 
+                ? (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result.UserTenant.GetTenantDataKey()
+                : null;
 
             //ATTEMPT
-            var results = adminUserService.QueryAuthUsers(dataKey)
-                .Select(x => new { x.Email, DataKey = x.UserTenant.GetTenantDataKey()} ).ToList();
+            var results = adminUserService.QueryAuthUsers(dataKey).ToList()
+                .Select(x => new { x.Email, DataKey = x.UserTenant?.GetTenantDataKey() ?? "- admin user -"} ).ToList();
 
             //VERIFY
             foreach (var result in results)
             {
                 _output.WriteLine($"{result.Email}, {result.DataKey}");
             }
-            results.Count.ShouldEqual(10);
+            results.Count.ShouldEqual(numUsersExpected);
+        }
+
+        [Theory]
+        [InlineData("admin@4uInc.com", 3)]
+        [InlineData("user1@Pets.com", 2)]
+        [InlineData("user1@BigR.com", 1)]
+        public async Task TestExample6QueryAuthUsers_Sharding(string userId, int numUsersExpected)
+        {
+            //SETUP
+            var cAnds = await SetupExample6DataAsync();
+            //Move some tenants to another database
+            cAnds.context.Tenants.Single(x => x.TenantFullName == "Pets Ltd.").UpdateShardingState("Shard1", true);
+            cAnds.context.SaveChanges();
+
+            var adminUserService = cAnds.serviceProvider.GetRequiredService<IAuthUsersAdminService>();
+            var dataKey = (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result.UserTenant.GetTenantDataKey();
+            var shardingKey = (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result.UserTenant.DatabaseInfoName;
+
+            //ATTEMPT
+            var results = adminUserService.QueryAuthUsers(dataKey, shardingKey).ToList()
+                .Select(x => new
+                {
+                    x.Email, 
+                    DataKey = x.UserTenant?.GetTenantDataKey(),
+                    ShardingKey = x.UserTenant?.DatabaseInfoName
+                }).ToList();
+
+            //VERIFY
+            foreach (var result in results)
+            {
+                _output.WriteLine($"{result.Email}, {result.DataKey}, {result.ShardingKey}");
+            }
+            results.Count.ShouldEqual(numUsersExpected);
         }
 
         [Fact]
@@ -170,7 +229,7 @@ namespace Test.UnitTests.TestExamples
             status.IsValid.ShouldBeTrue(status.GetAllErrors());
             cAnds.context.ChangeTracker.Clear();
             var rereadUser = (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result;
-            rereadUser.Email.ShouldEqual(userId);
+            rereadUser.Email.ShouldEqual(userId.ToLower());
             rereadUser.UserName.ShouldEqual(userId);
             rereadUser.UserRoles.Select(x => x.RoleName).ShouldEqual(new List<string> { "Area Manager", "Tenant Admin" });
             rereadUser.UserTenant.TenantFullName.ShouldEqual("4U Inc.");
@@ -195,7 +254,7 @@ namespace Test.UnitTests.TestExamples
             status.IsValid.ShouldBeTrue(status.GetAllErrors());
             cAnds.context.ChangeTracker.Clear();
             var rereadUser = (await adminUserService.FindAuthUserByUserIdAsync(userId)).Result;
-            rereadUser.Email.ShouldEqual(userId);
+            rereadUser.Email.ShouldEqual(userId.ToLower());
             rereadUser.UserName.ShouldEqual(userId);
             rereadUser.UserRoles.Select(x => x.RoleName).ShouldEqual(new List<string> { "Area Manager", "Tenant Admin" });
             rereadUser.UserTenant.TenantFullName.ShouldEqual("4U Inc.");

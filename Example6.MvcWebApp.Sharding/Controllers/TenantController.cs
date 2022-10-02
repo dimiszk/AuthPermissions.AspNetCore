@@ -5,6 +5,8 @@ using AuthPermissions.AdminCode;
 using AuthPermissions.AspNetCore;
 using AuthPermissions.AspNetCore.Services;
 using AuthPermissions.BaseCode;
+using AuthPermissions.BaseCode.CommonCode;
+using AuthPermissions.SupportCode.DownStatusCode;
 using Example6.MvcWebApp.Sharding.Models;
 using Example6.MvcWebApp.Sharding.PermissionsCode;
 using Microsoft.AspNetCore.Mvc;
@@ -15,10 +17,12 @@ namespace Example6.MvcWebApp.Sharding.Controllers
     public class TenantController : Controller
     {
         private readonly IAuthTenantAdminService _authTenantAdmin;
+        private readonly ISetRemoveStatus _upDownService;
 
-        public TenantController(IAuthTenantAdminService authTenantAdmin)
+        public TenantController(IAuthTenantAdminService authTenantAdmin, ISetRemoveStatus upDownService)
         {
             _authTenantAdmin = authTenantAdmin;
+            _upDownService = upDownService;
         }
 
         [HasPermission(Example6Permissions.TenantList)]
@@ -75,8 +79,10 @@ namespace Example6.MvcWebApp.Sharding.Controllers
         [HasPermission(Example6Permissions.TenantUpdate)]
         public async Task<IActionResult> Edit(ShardingSingleLevelTenantDto input)
         {
+            var removeDownAsync = await _upDownService.SetTenantDownWithDelayAsync(TenantDownVersions.Update, input.TenantId);
             var status = await _authTenantAdmin
                 .UpdateTenantNameAsync(input.TenantId, input.TenantName);
+            await removeDownAsync();
 
             return status.HasErrors
                 ? RedirectToAction(nameof(ErrorDisplay),
@@ -96,7 +102,8 @@ namespace Example6.MvcWebApp.Sharding.Controllers
             return View(new ShardingSingleLevelTenantDto
             {
                 TenantId = id,
-                TenantName = status.Result.TenantFullName
+                TenantName = status.Result.TenantFullName,
+                DataKey = status.Result.GetTenantDataKey()
             });
         }
 
@@ -105,7 +112,10 @@ namespace Example6.MvcWebApp.Sharding.Controllers
         [HasPermission(Example6Permissions.TenantDelete)]
         public async Task<IActionResult> Delete(ShardingSingleLevelTenantDto input)
         {
+            var removeDownAsync = await _upDownService.SetTenantDownWithDelayAsync(TenantDownVersions.Deleted, input.TenantId);
             var status = await _authTenantAdmin.DeleteTenantAsync(input.TenantId);
+            if (status.HasErrors)
+                await removeDownAsync();
 
             return status.HasErrors
                 ? RedirectToAction(nameof(ErrorDisplay),
@@ -136,8 +146,10 @@ namespace Example6.MvcWebApp.Sharding.Controllers
         [HasPermission(Example6Permissions.MoveTenantDatabase)]
         public async Task<IActionResult> MoveDatabase(ShardingSingleLevelTenantDto input)
         {
+            var removeDownAsync = await _upDownService.SetTenantDownWithDelayAsync(TenantDownVersions.Update, input.TenantId);
             var status = await _authTenantAdmin.MoveToDifferentDatabaseAsync(
                 input.TenantId, input.HasOwnDb, input.ConnectionName);
+            await removeDownAsync();
 
             return status.HasErrors
                 ? RedirectToAction(nameof(ErrorDisplay),

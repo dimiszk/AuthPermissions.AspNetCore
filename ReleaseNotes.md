@@ -1,5 +1,33 @@
 # Release Notes
 
+## Not approved
+
+- Improved feature: Changed JWT refresh token to handle multiple logged-in users - see issue #54
+
+## 3.4.0
+
+- BREAKING CHANGE (small): Refresh users claims now uses Net.DistributedFileStoreCache - see Example4
+- New feature: Take the application "down for maintenance", which diverts users to a "please wait" page - see Example4 and Example6
+- New feature: Code for minimal API's fluent HasPermission - see pull request #51. (thanks to @idan-h)
+- Improved feature: Added timeout on user invitation - see Example 3 and 5 (inspired by @idan-h)
+- Improved feature: The name of the sharding file can have an EnvironmentName, e.g. "shardingsettings.Production.json"
+- Improved feature: The RefreshUsersClaims classes have been moved to SupportCode project and a few classes have been renamed
+- Improved feature: Sharding now has distributed lock on changes to the shardingsettings.json file
+- Improved feature: The AuthUserAdmin method QueryAuthUsers now takes an optional DatabaseInfoName to allow tenant admin users on sharding
+- Bug Fix: The ReadShardingSettingsFile now return the default sharding DatabaseInformation if no sharding file is found
+- Updated NuGets: There was a security alert on one of the NuGets. All the NuGets have been updated to the latest 
+
+## 3.3.0
+
+- BREAKING CHANGE (small): The `GetDatabaseInfoNamesWithTenantNamesAsync` method returned collection now has `HasOwnDb` in it - see issue #39
+- Bug fix. Email is now stored as lower case. This fixes the problem and Postgres string compare is case sensitive - see issue #35
+- Bug fix: TenantRoles collection now return null if not loaded - this captures missing Includes etc.
+- New Sharding feature: New service called `IShardingSelectDatabase` which will find a DatabaseInfoName of a database to use for a new tenant.
+- New support feature: `InviteNewUser` service that handles the ""invite user" feature" - now works with all types of application
+- New support feature: `SignInAndCreateTenant` service to implement the "sign up" feature - now works with all types of multi-tenant app
+- New support feature: `IAddNewUserManager` for adding a new user, with two versions for different ASP.NET Core authentication handers
+- Improvement: The Azure AD handler now supports adding a AuthUser on login
+
 ## 3.2.1
 
 - Bug fix: Second refresh JWT Bearer token failed. Fixed by @akema-trebla - see issue #36 (thanks to @akema-trebla)
@@ -9,7 +37,7 @@
 
 - BREAKING CHANGE: The 3.0.0 sharding didn't work with Azure, so the way to define databases for sharding has changed - see issue #29 and docs: Setup -> Multi tenant configuration -> Sharding database settings
 - Improvement: The AuthUserAdmin method called `UpdateUserAsync` now allows you to select which properties you want to update - see docs: Admin -> AuthUser admin.
-- Removed: Removed AuthUserAdmin methods 1AddRoleToUser` and `RemoveRoleToUser` as the change to the `UpdateUserAsync` covers this.
+- Removed: Removed AuthUserAdmin methods `AddRoleToUser` and `RemoveRoleToUser` as the change to the `UpdateUserAsync` covers this.
 
 ## 3.1.0
 

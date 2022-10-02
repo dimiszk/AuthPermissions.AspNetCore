@@ -89,9 +89,20 @@ namespace Example4.MvcWebApp.IndividualAccounts.PermissionsCode
         [Display(GroupName = "TenantAdmin", Name = "Delete tenant", Description = "Can delete tenant (WARNING)", AutoGenerateFilter = true)]
         TenantDelete = 42_004,
 
+        //43_000
+        [Display(GroupName = "AppStatus", Name = "list active app statues", Description = "Can list active statues", AutoGenerateFilter = true)]
+        AppStatusList = 43_000,
+        [Display(GroupName = "AppStatus", Name = "Stop all users accessing app", Description = "Stop all users, apart from user who set this", AutoGenerateFilter = true)]
+        AppStatusAllDown = 43_002,
+        [Display(GroupName = "AppStatus", Name = "Stop users linked to specific tenant", Description = "Stop users linked to specific tenant", AutoGenerateFilter = true)]
+        AppStatusTenantDown = 43_003,
+        [Display(GroupName = "AppStatus", Name = "Remove an active app statue", Description = "Can turn off any active statue", AutoGenerateFilter = true)]
+        AppStatusRemove = 43_005,
+
+
         //Setting the AutoGenerateFilter to true in the display allows we can exclude this permissions
         //to admin users who aren't allowed alter this permissions
-        //Useful for multi-tenant applications where you can set up company-level admin users where you can hide some higher-level permissions
+        //Useful when first setting up an app
         [Display(GroupName = "SuperAdmin", Name = "AccessAll", 
             Description = "This allows the user to access every feature", AutoGenerateFilter = true)]
         AccessAll = ushort.MaxValue,

@@ -4,7 +4,8 @@
 using System.Linq;
 using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
-using Example5.MvcWebApp.AzureAdB2C.AzureAdCode;
+using AuthPermissions.AspNetCore.OpenIdCode;
+using AuthPermissions.SupportCode.AzureAdServices;
 using Microsoft.Extensions.DependencyInjection;
 using TestSupport.Attributes;
 using TestSupport.Helpers;
@@ -29,15 +30,13 @@ namespace Test.UnitTests.TestAzureAd
         [RunnableInDebugOnly]
         public async Task TestSyncAzureAdUsersService()
         {
-
             //SETUP
             var config = AppSettings.GetConfiguration();
             var services = new ServiceCollection();
             services.Configure<AzureAdOptions>(config.GetSection("AzureAd"));
-            services.AddHttpClient();
-            services.AddTransient<ISyncAuthenticationUsers, SyncAzureAdUsers>();
+            services.AddTransient<ISyncAuthenticationUsers, AzureAdAccessService>();
             var serviceProvider = services.BuildServiceProvider();
-
+            
             var service = serviceProvider.GetService<ISyncAuthenticationUsers>();
             service.ShouldNotBeNull();
 
@@ -50,6 +49,30 @@ namespace Test.UnitTests.TestAzureAd
                 _output.WriteLine($"Email: {user.Email}, Name: {user.UserName}, UserId: {user.UserId}");
             }
             users.Any().ShouldBeTrue();
+        }
+
+        /// <summary>
+        /// This test takes some time so only run it manually in Debug
+        /// </summary>
+        /// <returns></returns>
+        [RunnableInDebugOnly]
+        public async Task TestAzureAdAccessService_FindAzureUserAsync()
+        {
+            //SETUP
+            var config = AppSettings.GetConfiguration();
+            var services = new ServiceCollection();
+            services.Configure<AzureAdOptions>(config.GetSection("AzureAd"));
+            services.AddTransient<IAzureAdAccessService, AzureAdAccessService>();
+            var serviceProvider = services.BuildServiceProvider();
+
+            var service = serviceProvider.GetService<IAzureAdAccessService>();
+            service.ShouldNotBeNull();
+
+            //ATTEMPT
+            var userId = await service.FindAzureUserAsync("bad@authpermissions.onmicrosoft.com");
+
+            //VERIFY
+            _output.WriteLine(userId ?? "< null >");
         }
 
     }

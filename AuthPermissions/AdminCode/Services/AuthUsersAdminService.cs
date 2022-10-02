@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using AuthPermissions.BaseCode;
 using AuthPermissions.BaseCode.CommonCode;
@@ -23,7 +24,7 @@ namespace AuthPermissions.AdminCode.Services
     {
         private readonly AuthPermissionsDbContext _context;
         private readonly IAuthPServiceFactory<ISyncAuthenticationUsers> _syncAuthenticationUsersFactory;
-        private readonly bool _isMultiTenant;
+        private readonly AuthPermissionsOptions _options;
 
         /// <summary>
         /// ctor
@@ -37,19 +38,41 @@ namespace AuthPermissions.AdminCode.Services
         {
             _context = context ?? throw new ArgumentNullException(nameof(context));
             _syncAuthenticationUsersFactory = syncAuthenticationUsersFactory;
-            _isMultiTenant = options.TenantType.IsMultiTenant();
+            _options = options;
         }
 
         /// <summary>
-        /// This returns a IQueryable of AuthUser, with optional filtering by dataKey (useful for tenant admin)
+        /// This returns a IQueryable of AuthUser, with optional filtering by dataKey and sharding name (useful for tenant admin)
         /// </summary>
         /// <param name="dataKey">optional dataKey. If provided then it only returns AuthUsers that fall within that dataKey</param>
+        /// <param name="databaseInfoName">optional sharding name. If provided then it only returns AuthUsers that fall within that dataKey</param>
         /// <returns>query on the database</returns>
-        public IQueryable<AuthUser> QueryAuthUsers(string dataKey = null)
+        public IQueryable<AuthUser> QueryAuthUsers(string dataKey = null, string databaseInfoName = null)
         {
-            return dataKey == null
-                ? _context.AuthUsers
-                : _context.AuthUsers.Where(x => (x.UserTenant.ParentDataKey + x.TenantId + ".").StartsWith(dataKey));
+            if (dataKey == null)
+                return _context.AuthUsers;
+
+            if (!_options.TenantType.IsSharding())
+                //Not sharding so just check the DataKey
+                return _context.AuthUsers.Where(
+                    x => (x.UserTenant.ParentDataKey + x.TenantId + ".").StartsWith(dataKey));
+            
+            //It is sharding 
+            if (databaseInfoName == null)
+                throw new ArgumentNullException(nameof(databaseInfoName),
+                    "You must provide the user's databaseInfoName claim when using this method with sharding.");
+
+            if (_options.TenantType.IsHierarchical())
+                //Hierarchical: so normal DataKey test
+                return _context.AuthUsers.Where(x =>
+                    (x.UserTenant.ParentDataKey + x.TenantId + ".").StartsWith(dataKey) &&
+                    x.UserTenant.DatabaseInfoName == databaseInfoName);
+
+            //SingleLevel: The DataKey is only checked if its in a database with other tenants
+            return _context.AuthUsers.Where(x =>
+                (x.UserTenant.HasOwnDb || (x.UserTenant.ParentDataKey + x.TenantId + ".") == dataKey)
+                && x.UserTenant.DatabaseInfoName == databaseInfoName);
+
         }
 
         /// <summary>
@@ -82,6 +105,8 @@ namespace AuthPermissions.AdminCode.Services
         {
             if (email == null) throw new ArgumentNullException(nameof(email));
             var status = new StatusGenericHandler<AuthUser>();
+
+            email = email.Trim().ToLower();
 
             var authUser = await _context.AuthUsers
                 .Include(x => x.UserRoles)
@@ -125,7 +150,7 @@ namespace AuthPermissions.AdminCode.Services
         /// Doesn't work properly when used in a create, as the user's tenant hasn't be set
         /// </summary>
         /// <param name="userId">UserId of the user you are updating. Only needed in multi-tenant applications </param>
-        /// <param name="addNone">Defaults to true, with will add the <see cref="CommonConstants.EmptyTenantName"/> at the start.
+        /// <param name="addNone">Defaults to true, with will add the <see cref="CommonConstants.EmptyItemName"/> at the start.
         /// This is useful for selecting no roles</param>
         /// <returns></returns>
         public async Task<List<string>> GetRoleNamesForUsersAsync(string userId = null, bool addNone = true)
@@ -133,11 +158,12 @@ namespace AuthPermissions.AdminCode.Services
             List<string> InsertEmptyNameIfNeeded(List<string> localRoleNames)
             {
                 if (addNone)
-                    localRoleNames.Insert(0, CommonConstants.EmptyTenantName);
+                    localRoleNames.Insert(0, CommonConstants.EmptyItemName);
                 return localRoleNames;
             }
 
-            if (!_isMultiTenant)
+            if (!_options.TenantType.IsMultiTenant())
+                //Not multi-tenant app so simple list of all Roles
                 return InsertEmptyNameIfNeeded(await _context.RoleToPermissions
                     .Select(x => x.RoleName).ToListAsync());
 
@@ -199,11 +225,11 @@ namespace AuthPermissions.AdminCode.Services
                 status.AddError($"The email '{email}' is not a valid email.");
 
             //Find the tenant
-            var foundTenant = string.IsNullOrEmpty(tenantName) || tenantName == CommonConstants.EmptyTenantName
+            var foundTenant = string.IsNullOrEmpty(tenantName) || tenantName == CommonConstants.EmptyItemName
                 ? null
                 : await _context.Tenants.Include(x => x.TenantRoles)
                     .SingleOrDefaultAsync(x => x.TenantFullName == tenantName);
-            if (!string.IsNullOrEmpty(tenantName) && tenantName != CommonConstants.EmptyTenantName && foundTenant == null)
+            if (!string.IsNullOrEmpty(tenantName) && tenantName != CommonConstants.EmptyItemName && foundTenant == null)
                 status.AddError($"A tenant with the name '{tenantName}' wasn't found.");
 
             //Find/check the roles
@@ -225,15 +251,15 @@ namespace AuthPermissions.AdminCode.Services
         /// <summary>
         /// This update an existing AuthUser. This method is designed so you only have to provide data for the parts you want to update,
         /// i.e. if a parameter is null, then it keeps the original setting. The only odd one out is the tenantName,
-        /// where you have to provide the <see cref="CommonConstants.EmptyTenantName"/> value to remove the tenant.  
+        /// where you have to provide the <see cref="CommonConstants.EmptyItemName"/> value to remove the tenant.  
         /// </summary>
         /// <param name="userId"></param>
         /// <param name="email">Either provide a email or null. if null, then uses the current user's email</param>
         /// <param name="userName">Either provide a userName or null. if null, then uses the current user's userName</param>
         /// <param name="roleNames">Either a list of rolenames or null. If null, then keeps its current rolenames.
-        /// If the rolesNames collection only contains a single entry with the value <see cref="CommonConstants.EmptyTenantName"/>,
+        /// If the rolesNames collection only contains a single entry with the value <see cref="CommonConstants.EmptyItemName"/>,
         /// then the roles will be set to an empty collection.</param>
-        /// <param name="tenantName">If null, then keeps current tenant. If it is <see cref="CommonConstants.EmptyTenantName"/> it will remove a tenant link.
+        /// <param name="tenantName">If null, then keeps current tenant. If it is <see cref="CommonConstants.EmptyItemName"/> it will remove a tenant link.
         /// Otherwise the user will be linked to the tenant with that name.</param>
         /// <returns>status</returns>
         public async Task<IStatusGeneric> UpdateUserAsync(string userId, 
@@ -271,12 +297,12 @@ namespace AuthPermissions.AdminCode.Services
             if (tenantName != null)
             {
                 //Find the tenant
-                foundTenant = string.IsNullOrEmpty(tenantName) || tenantName == CommonConstants.EmptyTenantName
+                foundTenant = string.IsNullOrEmpty(tenantName) || tenantName == CommonConstants.EmptyItemName
                     ? null
                     : await _context.Tenants.Include(x => x.TenantRoles)
                         .SingleOrDefaultAsync(x => x.TenantFullName == tenantName);
 
-                if (!string.IsNullOrEmpty(tenantName) && tenantName != CommonConstants.EmptyTenantName && foundTenant == null)
+                if (!string.IsNullOrEmpty(tenantName) && tenantName != CommonConstants.EmptyItemName && foundTenant == null)
                     return status.AddError($"A tenant with the name '{tenantName}' wasn't found.");
             
                 authUserToUpdate.UpdateUserTenant(foundTenant);
@@ -286,7 +312,7 @@ namespace AuthPermissions.AdminCode.Services
             if (roleNames != null)
             {
                 var updatedRoles = new List<RoleToPermissions>();
-                if (!(roleNames.Count == 1 && roleNames.Single() == CommonConstants.EmptyTenantName))
+                if (!(roleNames.Count == 1 && roleNames.Single() == CommonConstants.EmptyItemName))
                 {
                     //Find/check Roles
                     var rolesStatus = await FindCheckRolesAreValidForUserAsync(roleNames, foundTenant, userName ?? email);
@@ -433,7 +459,11 @@ namespace AuthPermissions.AdminCode.Services
         {
             var status = new StatusGenericHandler<List<RoleToPermissions>>();
 
-            var foundRoles = roleNames?.Any() == true
+            if (roleNames == null || roleNames.SequenceEqual( new List<string> { CommonConstants.EmptyItemName }))
+                //If the only role is the empty item, then return no roles
+                return status.SetResult(new List<RoleToPermissions>());
+
+            var foundRoles = roleNames.Any() == true
                 ? await _context.RoleToPermissions
                     .Where(x => roleNames.Contains(x.RoleName))
                     .ToListAsync()

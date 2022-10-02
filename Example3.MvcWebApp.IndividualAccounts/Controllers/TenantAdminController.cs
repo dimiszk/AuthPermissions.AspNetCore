@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using AuthPermissions.AdminCode;
 using AuthPermissions.AspNetCore;
 using AuthPermissions.BaseCode.CommonCode;
-using Example3.InvoiceCode.Services;
+using AuthPermissions.SupportCode.AddUsersServices;
 using Example3.MvcWebApp.IndividualAccounts.Models;
 using Example3.MvcWebApp.IndividualAccounts.PermissionsCode;
 using ExamplesCommonCode.CommonAdmin;
@@ -61,29 +61,32 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
 
 
         [HasPermission(Example3Permissions.InviteUsers)]
-        public async Task<ActionResult> InviteUser()
+        public async Task<ActionResult> InviteUser([FromServices]IAuthTenantAdminService rolesAdmin)
         {
-            var currentUser = (await _authUsersAdmin.FindAuthUserByUserIdAsync(User.GetUserIdFromUser()))
-                .Result;
+            var setupInvite = new InviteUserSetup
+            {
+                AllRoleNames = await _authUsersAdmin.GetRoleNamesForUsersAsync(User.GetUserIdFromUser()),
+                ExpirationTimesDropdown = InviteNewUserService.ListOfExpirationTimes()
+            }; 
 
-            return View((object) currentUser?.UserTenant?.TenantFullName);
+            return View(setupInvite);
         }
 
         [HasPermission(Example3Permissions.InviteUsers)]
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<ActionResult> InviteUser([FromServices] IUserRegisterInviteService userRegisterInvite, string email)
+        public async Task<ActionResult> InviteUser([FromServices] IInviteNewUserService inviteUserServiceService, InviteUserSetup data)
         {
-            var currentUser = (await _authUsersAdmin.FindAuthUserByUserIdAsync(User.GetUserIdFromUser()))
-                .Result;
+            var addUserData = new AddNewUserDto { Email = data.Email, Roles = data.RoleNames, 
+                TimeInviteExpires = data.InviteExpiration}; 
+            var status = await inviteUserServiceService.CreateInviteUserToJoinAsync(addUserData, User.GetUserIdFromUser());
+            if (status.HasErrors)
+                return RedirectToAction(nameof(ErrorDisplay),
+                    new { errorMessage = status.GetAllErrors() });
 
-            if (currentUser == null || currentUser.TenantId == null)
-                return RedirectToAction(nameof(ErrorDisplay), new { errorMessage = "must be logged in and have a tenant" });
+            var inviteUrl = AbsoluteAction(Url, nameof(HomeController.AcceptInvite), "Home",  new { verify = status.Result });
 
-            var verify = userRegisterInvite.InviteUserToJoinTenantAsync((int)currentUser.TenantId, email);
-            var inviteUrl = AbsoluteAction(Url, nameof(HomeController.AcceptInvite), "Home",  new { verify });
-
-            return View("InviteUserUrl", new InviteUserDto(email, currentUser.UserTenant.TenantFullName, inviteUrl));
+            return View("InviteUserUrl", new InviteUserResult( status.Message, inviteUrl));
         }
 
         public ActionResult ErrorDisplay(string errorMessage)

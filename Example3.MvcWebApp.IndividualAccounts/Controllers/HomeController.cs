@@ -3,10 +3,10 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using Example3.InvoiceCode.Dtos;
+using AuthPermissions.SupportCode.AddUsersServices;
 using Example3.InvoiceCode.Services;
+using Example3.MvcWebApp.IndividualAccounts.PermissionsCode;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
 
 namespace Example3.MvcWebApp.IndividualAccounts.Controllers
 {
@@ -40,17 +40,16 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
         [AllowAnonymous]
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> CreateTenant(CreateTenantDto data,
-            [FromServices] IUserRegisterInviteService userRegisterInvite,
-            [FromServices] SignInManager<IdentityUser> signInManager)
+        public async Task<IActionResult> CreateTenant([FromServices] ISignInAndCreateTenant userRegisterInvite,
+            string tenantName, string email, string password, string version, bool isPersistent)
         {
-            var status = await userRegisterInvite.AddUserAndNewTenantAsync(data);
+            var newUserData = new AddNewUserDto { Email = email, Password = password, IsPersistent = isPersistent};
+            var newTenantData = new AddNewTenantDto { TenantName = tenantName, Version = version };
+            var status = await userRegisterInvite.SignUpNewTenantWithVersionAsync(newUserData, newTenantData,
+                Example3CreateTenantVersions.TenantSetupData);
             if (status.HasErrors)
                 return RedirectToAction(nameof(ErrorDisplay),
                     new { errorMessage = status.GetAllErrors() });
-
-            //User has been successfully registered so now we need to log them in
-            await signInManager.SignInAsync(status.Result, isPersistent: false);
 
             return RedirectToAction(nameof(Index),
                 new { message = status.Message });
@@ -65,17 +64,13 @@ namespace Example3.MvcWebApp.IndividualAccounts.Controllers
         [AllowAnonymous]
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<ActionResult> AcceptInvite(AcceptInviteDto data,
-            [FromServices] IUserRegisterInviteService userRegisterInvite,
-            [FromServices] SignInManager<IdentityUser> signInManager)
+        public async Task<ActionResult> AcceptInvite([FromServices] IInviteNewUserService inviteUserServiceService,
+            string verify, string email, string userName, string password, bool isPersistent)
         {
-            var status = await userRegisterInvite.AcceptUserJoiningATenantAsync(data.Email, data.Password, data.Verify);
+            var status = await inviteUserServiceService.AddUserViaInvite(verify, email, null, password, isPersistent);
             if (status.HasErrors)
                 return RedirectToAction(nameof(ErrorDisplay),
                     new { errorMessage = status.GetAllErrors() });
-
-            //User has been successfully registered so now we need to log them in
-            await signInManager.SignInAsync(status.Result, isPersistent: false);
 
             return RedirectToAction(nameof(Index),
                 new { message = status.Message });

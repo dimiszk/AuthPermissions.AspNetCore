@@ -28,18 +28,10 @@ public class ConnectionStringsOption : Dictionary<string, string> { }
 /// </summary>
 public class ShardingConnections : IShardingConnections
 {
-    /// <summary>
-    /// Defines the string for a SQL Server database server
-    /// </summary>
-    public const string SqlServerType = "SqlServer";
-    /// <summary>
-    /// Defines the string for a PostgreSQL database server
-    /// </summary>
-    public const string PostgresType =  "Postgres";
-
     private readonly ConnectionStringsOption _connectionDict;
     private readonly ShardingSettingsOption _shardingSettings;
     private readonly AuthPermissionsDbContext _context;
+    private readonly AuthPermissionsOptions _options;
 
     /// <summary>
     /// ctor
@@ -55,22 +47,24 @@ public class ShardingConnections : IShardingConnections
         //thanks to https://stackoverflow.com/questions/37287427/get-multiple-connection-strings-in-appsettings-json-without-ef
         _connectionDict = connectionsAccessor.Value;
         _shardingSettings = shardingSettingsAccessor.Value;
-        //If no shardingsetting.json file, then we provide one default sharding settings data
+        _context = context;
+        _options = options;
+
+        //If no sharding settings file, then we provide one default sharding settings data
+        //NOTE that the DatabaseInformation class has default values linked to a 
         _shardingSettings.ShardingDatabases ??= new List<DatabaseInformation>
         {
-            new DatabaseInformation { Name = options.ShardingDefaultDatabaseInfoName }
+            DatabaseInformation.FormDefaultDatabaseInfo(options)
         };
-        
-        _context = context;
     }
 
     /// <summary>
-    /// This returns all the database names in the shardingsetting.json file
+    /// This returns all the database names in the sharding settings file
     /// See <see cref="ShardingSettingsOption"/> for the format of that file
-    /// NOTE: If the shardingsetting.json file is missing, or there is no "ShardingData" section,
+    /// NOTE: If the sharding settings file is missing, or there is no "ShardingData" section,
     /// then it will return one <see cref="ShardingSettingsOption"/> that uses the "DefaultConnection" connection string
     /// </summary>
-    /// <returns>A list of <see cref="DatabaseInformation"/> from the shardingsetting.json file</returns>
+    /// <returns>A list of <see cref="DatabaseInformation"/> from the sharding settings file</returns>
     public List<DatabaseInformation> GetAllPossibleShardingData()
     {
         return _shardingSettings.ShardingDatabases;
@@ -86,26 +80,35 @@ public class ShardingConnections : IShardingConnections
     }
 
     /// <summary>
-    /// This returns all the database info names in the shardingsetting.json file, with a list of tenant name linked to each connection name
+    /// This returns all the database info names in the sharding settings file, with a list of tenant name linked to each connection name
+    /// NOTE: The DatabaseInfoName which matches the <see cref="AuthPermissionsOptions.ShardingDefaultDatabaseInfoName"/> is always
+    /// returns a HasOwnDb value of false. This is because the default database has the AuthP data in it.
     /// </summary>
-    /// <returns>List of all the database info names with the tenants using that database data name</returns>
-    public async Task<List<(string databaseInfoName, List<string> tenantNames)>> GetDatabaseInfoNamesWithTenantNamesAsync()
+    /// <returns>List of all the database info names with the tenants using that database data name
+    /// NOTE: The hasOwnDb is true for a database containing a single database, false for multiple tenant database and null if empty</returns>
+    public async Task<List<(string databaseInfoName, bool? hasOwnDb, List<string> tenantNames)>> GetDatabaseInfoNamesWithTenantNamesAsync()
     {
         var nameAndConnectionName  = await _context.Tenants
-            .Select(x => new { ConnectionName = x.DatabaseInfoName, x.TenantFullName})
+            .Select(x => new { ConnectionName = x.DatabaseInfoName, x})
             .ToListAsync();
             
         var grouped = nameAndConnectionName.GroupBy(x => x.ConnectionName)
             .ToDictionary(x => x.Key,
-                y => y.Select(z => z.TenantFullName));
+                y => y.Select(z => new {z.x.HasOwnDb, z.x.TenantFullName}));
 
-        var result = new List<(string connectionName, List<string>)>();
+        var result = new List<(string databaseInfoName, bool? hasOwnDb, List<string>)>();
         //Add sharding database names that have no tenants in them so that you can see all the connection string  names
         foreach (var databaseInfoName in _shardingSettings.ShardingDatabases.Select(x => x.Name))
         {
             result.Add(grouped.ContainsKey(databaseInfoName)
-                ? (databaseInfoName, grouped[databaseInfoName].ToList())
-                : (databaseInfoName, new List<string>()));
+                ? (databaseInfoName,
+                    databaseInfoName == _options.ShardingDefaultDatabaseInfoName
+                        ? false //The default DatabaseInfoName contains the AuthP information, so its a shared database
+                        : grouped[databaseInfoName].FirstOrDefault()?.HasOwnDb,  
+                    grouped[databaseInfoName].Select(x => x.TenantFullName).ToList())
+                : (databaseInfoName, 
+                    databaseInfoName == _options.ShardingDefaultDatabaseInfoName ? false : null,
+                    new List<string>()));
         }
 
         return result;
@@ -117,7 +120,7 @@ public class ShardingConnections : IShardingConnections
     /// <returns>The strings defining the different database types that are supported</returns>
     public string[] GetSupportedDatabaseTypes()
     {
-        return new string []{ SqlServerType, PostgresType};
+        return new string []{ DatabaseInformation.ShardingSqlServerType, DatabaseInformation.ShardingPostgresType };
     }
 
     /// <summary>
@@ -143,7 +146,7 @@ public class ShardingConnections : IShardingConnections
 
     /// <summary>
     /// This method allows you to check that the <see cref="DatabaseInformation"/> will create a
-    /// a valid connection string. Useful when adding or editing the data in the shardingsettings file.
+    /// a valid connection string. Useful when adding or editing the data in the sharding settings file.
     /// </summary>
     /// <param name="databaseInfo">The full definition of the <see cref="DatabaseInformation"/> for this database info</param>
     /// <returns></returns>
@@ -167,7 +170,7 @@ public class ShardingConnections : IShardingConnections
         {
             status.AddError(e.Message);
         }
-        catch (Exception e)
+        catch
         {
             status.AddError(
                 "There was an  error when trying to create a connection string. Typically this is because " +
@@ -192,7 +195,7 @@ public class ShardingConnections : IShardingConnections
     {
         switch (databaseInformation.DatabaseType)
         {
-            case SqlServerType:
+            case DatabaseInformation.ShardingSqlServerType:
             {
                 var builder = new SqlConnectionStringBuilder(connectionString);
                 if (string.IsNullOrEmpty(builder.InitialCatalog) && string.IsNullOrEmpty(databaseInformation.DatabaseName))
@@ -206,7 +209,7 @@ public class ShardingConnections : IShardingConnections
                 builder.InitialCatalog = databaseInformation.DatabaseName;
                 return builder.ConnectionString;
             }
-            case PostgresType:
+            case DatabaseInformation.ShardingPostgresType:
             {
                 var builder = new NpgsqlConnectionStringBuilder(connectionString);
                 if (string.IsNullOrEmpty(builder.Database) && string.IsNullOrEmpty(databaseInformation.DatabaseName))

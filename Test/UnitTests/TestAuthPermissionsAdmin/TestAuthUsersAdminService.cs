@@ -55,7 +55,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             }
             users.Count.ShouldEqual(3);
             users.OrderBy(x => x.UserId).Select(x => x.UserId).ShouldEqual(new[]{ "User1", "User2", "User3" });
-            users.OrderBy(x => x.Email).Select(x => x.Email).ShouldEqual(new[] { "User1@gmail.com", "User2@gmail.com", "User3@gmail.com" });
+            users.OrderBy(x => x.Email).Select(x => x.Email).ShouldEqual(new[] { "user1@gmail.com", "user2@gmail.com", "user3@gmail.com" });
         }
 
 
@@ -156,7 +156,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
             //VERIFY
             var expected = new List<string> { "Role1", "Role2", "Role3", "NormalRole" };
             if (addNone)
-                expected.Insert(0, CommonConstants.EmptyTenantName);
+                expected.Insert(0, CommonConstants.EmptyItemName);
             roleNames.ShouldEqual(expected);
         }
 
@@ -229,7 +229,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
         [InlineData("Role1", "Role1")]
         [InlineData("Role1,Role2,Role3", "Role1,Role2,Role3")]
         [InlineData(null, "Role1,Role2")]
-        [InlineData(CommonConstants.EmptyTenantName, null)]
+        [InlineData(CommonConstants.EmptyItemName, null)]
         public async Task TestUpdateUserAsync_ChangeRolesOk(string roleNamesCommaDelimited, string expectedRolesCommaDelimited)
         {
             //SETUP
@@ -260,7 +260,7 @@ namespace Test.UnitTests.TestAuthPermissionsAdmin
         [InlineData(false, "Tenant2", "Tenant2")]
         [InlineData(true, "Tenant2", "Tenant2")]
         [InlineData(true, null, "Tenant1")]
-        [InlineData(true, CommonConstants.EmptyTenantName, null)]
+        [InlineData(true, CommonConstants.EmptyItemName, null)]
         public async Task TestUpdateUserAsync_ChangeTenantOk(bool addTenant1, string newTenantName, string expectedTenantName)
         {
             //SETUP

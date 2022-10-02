@@ -93,6 +93,8 @@ namespace Example4.MvcWebApp.IndividualAccounts.Models
                 TenantId = tenant.TenantId,
                 TenantFullName = tenant.TenantFullName,
                 TenantName = tenant.GetTenantName(), 
+                DataKey = tenant.GetTenantDataKey(),
+
                 ListOfTenants = (await tenantAdminService.GetHierarchicalTenantChildrenViaIdAsync(tenant.TenantId))
                     .Select(x => new KeyValuePair<int,string>(x.TenantId, x.TenantFullName) )
                     .ToList()
